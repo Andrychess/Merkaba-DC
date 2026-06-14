@@ -3,13 +3,14 @@ import type { FileNode } from '@shared/types';
 import { getNoteColorHex } from '@shared/note-colors';
 import { ROOT_DROP_ID } from '@shared/archive';
 import { isArchivePath } from '@shared/archive';
-import { formatSpaceDisplay, getSpaceChildren } from '@shared/spaces';
+import { formatSpaceDisplay, formatSpaceLabel, getFolderSymbol, getSpaceChildren } from '@shared/spaces';
 import { getNoteDisplayTitle, getNotePreview } from '@shared/note-heading';
 import { useAppStore } from '../stores/appStore';
 import { IconFolder, IconChevron, IconPlus, IconSearch, IconComposeNote, IconX } from './Icons';
 import { NoteTypeIcon } from './NoteTypeIcon';
 import { NoteColorPicker } from './NoteColorPicker';
 import { SpaceSwitcher } from './SpaceSwitcher';
+import { FolderEditDialog } from './FolderEditDialog';
 import { NoteCreateMenu } from './NoteCreateMenu';
 
 const DRAG_PATH = 'application/x-merkaba-path';
@@ -44,6 +45,10 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
   const unpinNote = useAppStore((s) => s.unpinNote);
   const setNoteColor = useAppStore((s) => s.setNoteColor);
   const activeSpace = useAppStore((s) => s.activeSpace);
+  const spaceSymbols = useAppStore((s) => s.spaceSymbols);
+
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const folderSymbol = node.type === 'folder' ? getFolderSymbol(node.path, spaceSymbols) : null;
 
   const isActive = node.type === 'file' && node.path === activeFile;
   const isSelectedFolder = node.type === 'folder' && node.path === selectedFolder;
@@ -72,8 +77,9 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
     }
   };
 
-  const canRenameFolder =
+  const canManageFolder =
     node.type === 'folder' && !isArchivePath(node.path) && node.path !== 'attachments';
+  const folderLabel = formatSpaceLabel(node.name);
 
   const handleRename = async () => {
     if (newName && newName !== displayTitle) {
@@ -86,8 +92,8 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
     setRenaming(false);
   };
 
-  const handleArchiveFolder = async () => {
-    if (!confirm(`Переместить папку «${node.name}» в архив?`)) return;
+  const handleDeleteFolder = async () => {
+    if (!confirm(`Удалить папку «${folderLabel}»? Содержимое переместится в архив.`)) return;
     await deleteFolder(node.path);
     setShowMenu(false);
   };
@@ -170,23 +176,45 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
         )}
 
         {node.type === 'folder' ? (
-          <div className="flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5">
-            <IconChevron expanded={expanded} className="w-3 h-3 shrink-0 opacity-60" />
-            <IconFolder className="w-4 h-4 shrink-0 text-amber-400/80" />
-            {renaming ? (
-              <input
-                className="flex-1 bg-merkaba-bg border border-merkaba-accent/40 rounded-md px-2 py-0.5 text-sm outline-none"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onBlur={handleRename}
-                onKeyDown={(e) => e.key === 'Enter' && handleRename()}
-                autoFocus
-                onClick={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <span className="truncate flex-1 py-0.5">{node.name}</span>
+          <>
+            <div className="flex items-center gap-2 flex-1 min-w-0 px-2 py-1.5">
+              <IconChevron expanded={expanded} className="w-3 h-3 shrink-0 opacity-60" />
+              {folderSymbol ? (
+                <span className="w-4 text-center text-sm leading-none shrink-0" aria-hidden>
+                  {folderSymbol}
+                </span>
+              ) : (
+                <IconFolder className="w-4 h-4 shrink-0 text-amber-400/80" />
+              )}
+              <span className="truncate flex-1 py-0.5">{folderLabel}</span>
+            </div>
+            {canManageFolder && (
+              <div className="flex shrink-0 self-stretch opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowEditDialog(true);
+                  }}
+                  title="Переименовать"
+                  className="w-9 flex items-center justify-center text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover/80 transition-colors"
+                >
+                  <span className="text-xs">✎</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleDeleteFolder();
+                  }}
+                  title="Удалить"
+                  className="w-9 flex items-center justify-center text-merkaba-muted hover:text-red-400 hover:bg-merkaba-hover/80 transition-colors"
+                >
+                  <IconX className="w-4 h-4" />
+                </button>
+              </div>
             )}
-          </div>
+          </>
         ) : renaming ? (
           <div className="flex-1 flex items-center px-3 py-2">
             <input
@@ -276,12 +304,12 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
             )}
             {node.type === 'folder' && (
               <>
-                {canRenameFolder && (
+                {canManageFolder && (
                   <button
                     className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setRenaming(true);
+                      setShowEditDialog(true);
                       setShowMenu(false);
                     }}
                   >
@@ -308,12 +336,14 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
                     Переместить в корень
                   </button>
                 )}
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); handleArchiveFolder(); }}
-                >
-                  В архив
-                </button>
+                {canManageFolder && (
+                  <button
+                    className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(); }}
+                  >
+                    Удалить
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -329,6 +359,14 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
           onDragOverPath={onDragOverPath}
         />
       ))}
+
+      {showEditDialog && node.type === 'folder' && (
+        <FolderEditDialog
+          folderPath={node.path}
+          folderName={node.name}
+          onClose={() => setShowEditDialog(false)}
+        />
+      )}
     </div>
   );
 }

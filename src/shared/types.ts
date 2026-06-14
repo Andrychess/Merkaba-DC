@@ -13,6 +13,12 @@ export interface FileNode {
   children?: FileNode[];
 }
 
+/** Параметры сканирования дерева файлов */
+export interface TreeScanOptions {
+  /** Читать frontmatter для заголовков и превью (медленнее) */
+  withMeta?: boolean;
+}
+
 export interface NoteMeta {
   title: string | null;
   created: string | null;
@@ -94,6 +100,8 @@ export interface Config {
   showFrontmatter: 'always' | 'source-only';
   language: 'ru' | 'en';
   syncMode: 'cloud' | 'local';
+  /** Автоматическая синхронизация с облаком (по умолчанию — только вручную) */
+  autoSync: boolean;
 }
 
 export const defaultConfig: Config = {
@@ -105,4 +113,5 @@ export const defaultConfig: Config = {
   showFrontmatter: 'source-only',
   language: 'ru',
   syncMode: 'cloud',
+  autoSync: false,
 };

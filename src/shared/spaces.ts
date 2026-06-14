@@ -107,6 +107,12 @@ export function getSpaceSymbol(spaceId: string, symbols?: Record<string, string>
   return map[spaceId] ?? DEFAULT_SPACE_SYMBOLS[spaceId] ?? '📂';
 }
 
+/** Символ вложенной папки (только если задан пользователем) */
+export function getFolderSymbol(folderPath: string, symbols?: Record<string, string>): string | null {
+  const map = symbols ?? loadSpaceSymbols();
+  return map[folderPath] ?? null;
+}
+
 export function formatSpaceDisplay(spaceId: string, symbols?: Record<string, string>): string {
   const symbol = getSpaceSymbol(spaceId, symbols);
   const label = formatSpaceLabel(spaceId);

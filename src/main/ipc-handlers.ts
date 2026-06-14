@@ -97,22 +97,40 @@ function startWatcher(rootPath: string): void {
   });
 }
 
-async function initVaultFromSync(): Promise<VaultInitResult> {
+function notifyFsChanged(): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('fs:changed', 'sync', '');
+  }
+}
+
+const AUTO_SYNC_INTERVAL_MS = 60_000;
+
+function applyAutoSyncPolicy(config: Config): void {
+  if (!syncEngine) return;
+  syncEngine.stopPeriodicSync();
+  if (config.autoSync) {
+    syncEngine.startPeriodicSync(AUTO_SYNC_INTERVAL_MS, flushAllCloudUploads);
+  }
+}
+
+async function initVaultLocalFirst(): Promise<VaultInitResult> {
   syncEngine = new SyncEngine(sendStatus);
-  const { isNew } = await syncEngine.initialize();
+  const { isNew } = await syncEngine.initializeLocal();
 
   const localRoot = syncEngine.getLocalRoot();
   fileSystem = await initLocalFileSystem();
   configManager = new ConfigManager(localRoot);
   const config = await configManager.load();
-  await configManager.set({ ...config, rootPath: localRoot });
+  const merged = await configManager.set({ ...config, rootPath: localRoot });
+
+  syncEngine.bindAutoSync(() => getConfigManager().get().autoSync);
 
   initWritePipeline();
-  await rebuildSearchNow();
+  scheduleSearchRebuild();
   startWatcher(localRoot);
-  syncEngine.startPeriodicSync(60_000, flushAllCloudUploads);
+  applyAutoSyncPolicy(merged);
 
-  return { rootPath: localRoot, isNew, synced: true };
+  return { rootPath: localRoot, isNew, synced: false };
 }
 
 export function registerIpcHandlers(win: BrowserWindow): void {
@@ -187,22 +205,21 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('sync:pull', async () => {
     await flushAllCloudUploads();
+    await getSync().ensureCloudStructure();
     await getSync().syncAll();
     await rebuildSearchNow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('fs:changed', 'sync', '');
-    }
+    notifyFsChanged();
   });
 
   ipcMain.handle('vault:initCloud', async (): Promise<VaultInitResult> => {
-    return initVaultFromSync();
+    return initVaultLocalFirst();
   });
 
   ipcMain.handle('session:restore', async (): Promise<VaultInitResult | null> => {
     const auth = await getAuthStatus();
     if (!auth.authenticated) return null;
     try {
-      return await initVaultFromSync();
+      return await initVaultLocalFirst();
     } catch {
       return null;
     }
@@ -228,7 +245,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
     const archivePath = await archiveFile(getFs(), relativePath);
     await getPinnedStore().removePath(relativePath);
-    await getSync().pushRename(relativePath, archivePath);
+    await getSync().pushRenameOrQueue(relativePath, archivePath);
     await rebuildAll();
     return { archivePath, mdFiles: [relativePath] };
   });
@@ -240,7 +257,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const mdFiles = await getFs().listMdFilesInFolder(relativePath);
     const archivePath = await archiveFolder(getFs(), relativePath);
     await getPinnedStore().removePath(relativePath);
-    await getSync().pushRename(relativePath, archivePath);
+    await getSync().pushRenameOrQueue(relativePath, archivePath);
     await rebuildAll();
     return { archivePath, mdFiles };
   });
@@ -251,7 +268,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
     const newPath = await getFs().moveItem(itemPath, targetFolderPath);
     await getPinnedStore().remapPath(itemPath, newPath);
-    await getSync().pushRename(itemPath, newPath);
+    await getSync().pushRenameOrQueue(itemPath, newPath);
     await rebuildAll();
     return newPath;
   });
@@ -259,13 +276,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   ipcMain.handle('fs:renameFile', async (_, oldPath: string, newPath: string) => {
     await getFs().renameFile(oldPath, newPath);
     await getPinnedStore().remapPath(oldPath, newPath);
-    await getSync().pushRename(oldPath, newPath);
+    await getSync().pushRenameOrQueue(oldPath, newPath);
     scheduleSearchRebuild();
   });
 
   ipcMain.handle('fs:createFolder', async (_, relativePath: string) => {
     await getFs().createFolder(relativePath);
-    void getSync().pushFolder(relativePath).catch(() => {
+    void getSync().pushFolderOrQueue(relativePath).catch(() => {
       // папка подтянется при следующей синхронизации
     });
     scheduleSearchRebuild();
@@ -278,12 +295,12 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return notePath;
   });
 
-  ipcMain.handle('fs:getFileTree', async () => {
-    return getFs().getFileTree();
+  ipcMain.handle('fs:getFileTree', async (_, options?: { withMeta?: boolean }) => {
+    return getFs().getFileTree(options);
   });
 
-  ipcMain.handle('fs:getArchiveTree', async () => {
-    return getFs().getArchiveTree();
+  ipcMain.handle('fs:getArchiveTree', async (_, options?: { withMeta?: boolean }) => {
+    return getFs().getArchiveTree(options);
   });
 
   ipcMain.handle('fs:clearArchive', async () => {
@@ -291,7 +308,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     for (const file of mdFiles) {
       await getPinnedStore().removePath(file);
     }
-    await getSync().clearArchiveRemote();
+    await getSync().clearArchiveRemoteOrQueue();
     await rebuildAll();
     return { mdFiles };
   });
@@ -349,8 +366,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('config:set', async (_, partial: Partial<Config>) => {
     const updated = await getConfigManager().set(partial);
+    applyAutoSyncPolicy(updated);
     try {
-      await getSync().pushFile('.merkaba/config.json', JSON.stringify(updated, null, 2));
+      await getSync().pushFileOrQueue('.merkaba/config.json', JSON.stringify(updated, null, 2));
     } catch {
       // очередь отложенных загрузок подхватит при следующем sync
     }
@@ -365,8 +383,8 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     const result = await conflictDetector.resolveConflict(getFs(), file, choice);
     if (result) {
       const sync = getSync();
-      await sync.pushFile(result.mainPath, result.content);
-      await sync.pushDelete(result.conflictPath);
+      await sync.pushFileOrQueue(result.mainPath, result.content);
+      await sync.pushDeleteOrQueue(result.conflictPath);
     }
     await rebuildAll();
   });

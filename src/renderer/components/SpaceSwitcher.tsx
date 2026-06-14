@@ -1,80 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FileNode } from '@shared/types';
-import {
-  formatSpaceLabel,
-  getSpaceSymbol,
-  getSpacesFromTree,
-  normalizeSpaceSymbol,
-  SPACE_SYMBOL_PRESETS,
-} from '@shared/spaces';
+import { formatSpaceLabel, getSpaceSymbol, getSpacesFromTree } from '@shared/spaces';
 import { useAppStore } from '../stores/appStore';
-import { IconChevron, IconPlus } from './Icons';
+import { FolderEditDialog } from './FolderEditDialog';
+import { IconChevron, IconPlus, IconX } from './Icons';
+import { SpaceSymbolPicker } from './SpaceSymbolPicker';
 
 interface SpaceSwitcherProps {
   fileTree: FileNode[];
-}
-
-function SpaceSymbolPicker({
-  value,
-  onChange,
-  className = '',
-}: {
-  value: string;
-  onChange: (symbol: string) => void;
-  className?: string;
-}) {
-  const [custom, setCustom] = useState('');
-
-  return (
-    <div className={className}>
-      <div className="grid grid-cols-9 gap-1 mb-2">
-        {SPACE_SYMBOL_PRESETS.map((sym) => (
-          <button
-            key={sym}
-            type="button"
-            onClick={() => onChange(sym)}
-            className={`w-8 h-8 rounded-lg text-lg flex items-center justify-center transition-colors ${
-              value === sym
-                ? 'bg-merkaba-accent-soft ring-1 ring-merkaba-accent/40'
-                : 'hover:bg-merkaba-hover'
-            }`}
-          >
-            {sym}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-merkaba-muted shrink-0">Свой</span>
-        <input
-          value={custom}
-          onChange={(e) => {
-            const next = normalizeSpaceSymbol(e.target.value);
-            setCustom(e.target.value);
-            if (next) onChange(next);
-          }}
-          placeholder="эмодзи"
-          maxLength={4}
-          className="input-field !py-1.5 !text-sm w-20 text-center"
-        />
-      </div>
-    </div>
-  );
 }
 
 export function SpaceSwitcher({ fileTree }: SpaceSwitcherProps) {
   const activeSpace = useAppStore((s) => s.activeSpace);
   const spaceSymbols = useAppStore((s) => s.spaceSymbols);
   const setActiveSpace = useAppStore((s) => s.setActiveSpace);
-  const setSpaceSymbol = useAppStore((s) => s.setSpaceSymbol);
   const createSpaceWithName = useAppStore((s) => s.createSpaceWithName);
   const deleteFolder = useAppStore((s) => s.deleteFolder);
 
   const [open, setOpen] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingSpace, setEditingSpace] = useState<FileNode | null>(null);
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('📂');
   const [creating, setCreating] = useState(false);
-  const [editingSymbol, setEditingSymbol] = useState<string | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -88,7 +36,6 @@ export function SpaceSwitcher({ fileTree }: SpaceSwitcherProps) {
     const onPointerDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
         setOpen(false);
-        setEditingSymbol(null);
       }
     };
     document.addEventListener('mousedown', onPointerDown);
@@ -118,33 +65,61 @@ export function SpaceSwitcher({ fileTree }: SpaceSwitcherProps) {
   const selectSpace = (path: string) => {
     setActiveSpace(path);
     setOpen(false);
-    setEditingSymbol(null);
   };
 
-  const archiveSpace = (space: FileNode) => {
-    if (confirm(`Переместить пространство «${formatSpaceLabel(space.name)}» в архив?`)) {
-      deleteFolder(space.path);
-      setOpen(false);
-    }
+  const deleteSpace = async (space: FileNode) => {
+    const label = formatSpaceLabel(space.name);
+    if (!confirm(`Удалить пространство «${label}»? Содержимое переместится в архив.`)) return;
+    await deleteFolder(space.path);
+    setOpen(false);
+  };
+
+  const openEdit = (space: FileNode) => {
+    setEditingSpace(space);
+    setOpen(false);
   };
 
   return (
     <>
       <div ref={rootRef} className="px-3 pt-3 pb-2 border-b border-merkaba-border shrink-0 relative">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl bg-merkaba-elevated border border-merkaba-border hover:bg-merkaba-hover hover:border-merkaba-border-strong transition-colors text-left"
-          title="Переключить пространство"
-        >
-          <span className="text-base leading-none shrink-0 w-6 text-center" aria-hidden>
-            {activeSymbol}
-          </span>
-          <span className="flex-1 min-w-0 text-sm font-medium text-merkaba-text truncate">
-            {activeLabel}
-          </span>
-          <IconChevron expanded={open} className="w-3.5 h-3.5 shrink-0 text-merkaba-muted" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex-1 flex items-center gap-2 px-2.5 py-2 rounded-xl bg-merkaba-elevated border border-merkaba-border hover:bg-merkaba-hover hover:border-merkaba-border-strong transition-colors text-left min-w-0"
+            title="Переключить пространство"
+          >
+            <span className="text-base leading-none shrink-0 w-6 text-center" aria-hidden>
+              {activeSymbol}
+            </span>
+            <span className="flex-1 min-w-0 text-sm font-medium text-merkaba-text truncate">
+              {activeLabel}
+            </span>
+            <IconChevron expanded={open} className="w-3.5 h-3.5 shrink-0 text-merkaba-muted" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const space = spaces.find((s) => s.path === activeSpace);
+              if (space) openEdit(space);
+            }}
+            title="Переименовать"
+            className="shrink-0 w-9 h-9 rounded-xl border border-merkaba-border bg-merkaba-elevated text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors text-xs"
+          >
+            ✎
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const space = spaces.find((s) => s.path === activeSpace);
+              if (space) void deleteSpace(space);
+            }}
+            title="Удалить пространство"
+            className="shrink-0 w-9 h-9 rounded-xl border border-merkaba-border bg-merkaba-elevated text-merkaba-muted hover:text-red-400 hover:bg-merkaba-hover transition-colors"
+          >
+            <IconX className="w-4 h-4 mx-auto" />
+          </button>
+        </div>
 
         {open && (
           <div className="absolute left-3 right-3 top-full mt-1 z-50 bg-merkaba-sidebar border border-merkaba-border-strong rounded-xl shadow-panel overflow-hidden animate-fade-in">
@@ -158,55 +133,48 @@ export function SpaceSwitcher({ fileTree }: SpaceSwitcherProps) {
                   const sym = getSpaceSymbol(space.path, spaceSymbols);
                   const label = formatSpaceLabel(space.name);
                   const active = space.path === activeSpace;
-                  const editing = editingSymbol === space.path;
 
                   return (
                     <li key={space.path}>
-                      {editing ? (
-                        <div className="px-2 py-2 border-b border-merkaba-border">
-                          <p className="text-[10px] text-merkaba-muted mb-1.5 px-1">{label}</p>
-                          <SpaceSymbolPicker
-                            value={sym}
-                            onChange={(next) => {
-                              setSpaceSymbol(space.path, next);
-                              setEditingSymbol(null);
-                            }}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center">
-                          <button
-                            type="button"
-                            onClick={() => selectSpace(space.path)}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              archiveSpace(space);
-                            }}
-                            className={`flex-1 flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
-                              active
-                                ? 'bg-merkaba-accent-soft text-merkaba-accent'
-                                : 'text-merkaba-text hover:bg-merkaba-hover'
-                            }`}
-                          >
-                            <span className="w-6 text-center text-base leading-none shrink-0">{sym}</span>
-                            <span className="truncate">{label}</span>
-                            {active && (
-                              <span className="ml-auto w-1.5 h-1.5 rounded-full bg-merkaba-accent shrink-0" />
-                            )}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingSymbol(space.path);
-                            }}
-                            title="Изменить символ"
-                            className="px-2 py-2 text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors text-xs shrink-0"
-                          >
-                            ✎
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => selectSpace(space.path)}
+                          className={`flex-1 flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                            active
+                              ? 'bg-merkaba-accent-soft text-merkaba-accent'
+                              : 'text-merkaba-text hover:bg-merkaba-hover'
+                          }`}
+                        >
+                          <span className="w-6 text-center text-base leading-none shrink-0">{sym}</span>
+                          <span className="truncate">{label}</span>
+                          {active && (
+                            <span className="ml-auto w-1.5 h-1.5 rounded-full bg-merkaba-accent shrink-0" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEdit(space);
+                          }}
+                          title="Переименовать"
+                          className="px-2 py-2 text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors text-xs shrink-0"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteSpace(space);
+                          }}
+                          title="Удалить"
+                          className="px-2 py-2 text-merkaba-muted hover:text-red-400 hover:bg-merkaba-hover transition-colors shrink-0"
+                        >
+                          <IconX className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
@@ -271,6 +239,14 @@ export function SpaceSwitcher({ fileTree }: SpaceSwitcherProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {editingSpace && (
+        <FolderEditDialog
+          folderPath={editingSpace.path}
+          folderName={editingSpace.name}
+          onClose={() => setEditingSpace(null)}
+        />
       )}
     </>
   );

@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import type { FileNode } from '../shared/types';
+import type { FileNode, TreeScanOptions } from '../shared/types';
 import { ARCHIVE_FOLDER, isArchivePath } from '../shared/archive';
 import { parseNote } from '../shared/frontmatter';
 import { buildInitialBody, getDefaultTitle, inferNoteTypeFromBody, type NoteType } from '../shared/note-types';
@@ -133,13 +133,13 @@ export class FileSystem {
     await fs.mkdir(this.fullPath(relativePath), { recursive: true });
   }
 
-  async getFileTree(): Promise<FileNode[]> {
-    return this.scanDirectory('');
+  async getFileTree(options?: TreeScanOptions): Promise<FileNode[]> {
+    return this.scanDirectory('', options?.withMeta !== false);
   }
 
-  async getArchiveTree(): Promise<FileNode[]> {
+  async getArchiveTree(options?: TreeScanOptions): Promise<FileNode[]> {
     try {
-      return await this.scanDirectory(ARCHIVE_FOLDER);
+      return await this.scanDirectory(ARCHIVE_FOLDER, options?.withMeta !== false);
     } catch {
       return [];
     }
@@ -196,7 +196,7 @@ export class FileSystem {
     }
   }
 
-  private async scanDirectory(relativePath: string): Promise<FileNode[]> {
+  private async scanDirectory(relativePath: string, withMeta = true): Promise<FileNode[]> {
     const fullPath = this.fullPath(relativePath);
     let entries;
     try {
@@ -218,20 +218,28 @@ export class FileSystem {
           name: entry.name,
           path: entryPath.replace(/\\/g, '/'),
           type: 'folder',
-          children: await this.scanDirectory(entryPath),
+          children: await this.scanDirectory(entryPath, withMeta),
         });
       } else if (entry.name.endsWith('.md')) {
-        const meta = await this.readNoteTreeMeta(entryPath);
         const filePath = entryPath.replace(/\\/g, '/');
-        nodes.push({
-          name: entry.name.replace(/\.md$/, ''),
-          path: filePath,
-          type: 'file',
-          color: meta.color,
-          noteType: meta.noteType,
-          title: meta.title,
-          preview: meta.preview,
-        });
+        if (!withMeta) {
+          nodes.push({
+            name: entry.name.replace(/\.md$/, ''),
+            path: filePath,
+            type: 'file',
+          });
+        } else {
+          const meta = await this.readNoteTreeMeta(entryPath);
+          nodes.push({
+            name: entry.name.replace(/\.md$/, ''),
+            path: filePath,
+            type: 'file',
+            color: meta.color,
+            noteType: meta.noteType,
+            title: meta.title,
+            preview: meta.preview,
+          });
+        }
       }
     }
 

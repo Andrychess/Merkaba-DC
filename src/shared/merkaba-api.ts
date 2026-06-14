@@ -5,6 +5,7 @@ import type {
   GraphData,
   SearchResult,
   Sticker,
+  TreeScanOptions,
 } from './types';
 import type { AuthStatus, SyncStatus, VaultInitResult } from './yandex';
 
@@ -17,8 +18,8 @@ export interface MerkabaAPI {
   renameFile: (oldPath: string, newPath: string) => Promise<void>;
   createFolder: (path: string) => Promise<void>;
   createNote: (folderPath: string, name: string, noteType?: string) => Promise<string>;
-  getFileTree: () => Promise<FileNode[]>;
-  getArchiveTree: () => Promise<FileNode[]>;
+  getFileTree: (options?: TreeScanOptions) => Promise<FileNode[]>;
+  getArchiveTree: (options?: TreeScanOptions) => Promise<FileNode[]>;
   clearArchive: () => Promise<{ mdFiles: string[] }>;
   getPinnedNotes: () => Promise<string[]>;
   pinNote: (path: string) => Promise<string[]>;

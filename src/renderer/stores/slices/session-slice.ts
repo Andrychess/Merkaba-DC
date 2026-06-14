@@ -21,7 +21,9 @@ export const createSessionSlice: AppSlice<Pick<
       set(
         vaultStateFromBootstrap(
           data,
-          auth.login ? `Синхронизировано (${auth.login})` : 'Синхронизировано с Яндекс.Диском'
+          auth.login
+            ? `Загружено с устройства (${auth.login})`
+            : 'Загружено с устройства'
         )
       );
       return true;
@@ -40,8 +42,8 @@ export const createSessionSlice: AppSlice<Pick<
         vaultStateFromBootstrap(
           data,
           result.isNew
-            ? `Создано хранилище на Диске (${auth.login})`
-            : `Загружено с Диска (${auth.login})`
+            ? `Создано локально (${auth.login})`
+            : `Загружено с устройства (${auth.login})`
         )
       );
     } catch (err) {
@@ -57,7 +59,7 @@ export const createSessionSlice: AppSlice<Pick<
       const data = await fetchVaultBootstrap(result.rootPath);
 
       set(
-        vaultStateFromBootstrap(data, `Вход выполнен (${auth.login})`, { showConflicts: false })
+        vaultStateFromBootstrap(data, `Загружено с устройства (${auth.login})`, { showConflicts: false })
       );
     } catch (err) {
       set({ statusMessage: `Ошибка: ${err}` });

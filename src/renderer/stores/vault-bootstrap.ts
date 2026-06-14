@@ -11,9 +11,10 @@ export interface VaultBootstrapData {
 
 export async function fetchVaultBootstrap(rootPath: string): Promise<VaultBootstrapData> {
   const config = await window.merkaba.getConfig();
+  const fastScan = { withMeta: false } as const;
   const [fileTree, archiveTree, pinnedNotes, conflicts] = await Promise.all([
-    window.merkaba.getFileTree(),
-    window.merkaba.getArchiveTree(),
+    window.merkaba.getFileTree(fastScan),
+    window.merkaba.getArchiveTree(fastScan),
     window.merkaba.getPinnedNotes(),
     window.merkaba.getConflicts(),
   ]);

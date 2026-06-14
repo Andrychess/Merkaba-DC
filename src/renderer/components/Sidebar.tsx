@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { findNoteInTree } from '../utils/note-tree';
 import { NoteTypeIcon } from './NoteTypeIcon';
@@ -35,15 +34,10 @@ export function Sidebar() {
   const activeFile = useAppStore((s) => s.activeFile);
   const openFile = useAppStore((s) => s.openFile);
   const unpinNote = useAppStore((s) => s.unpinNote);
-  const loadPinnedNotes = useAppStore((s) => s.loadPinnedNotes);
   const refreshArchiveTree = useAppStore((s) => s.refreshArchiveTree);
   const fileTree = useAppStore((s) => s.fileTree);
   const archiveTree = useAppStore((s) => s.archiveTree);
   const openFiles = useAppStore((s) => s.openFiles);
-
-  useEffect(() => {
-    loadPinnedNotes();
-  }, [loadPinnedNotes]);
 
   const createSticker = async () => {
     await window.merkaba.createSticker();

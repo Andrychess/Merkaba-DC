@@ -64,6 +64,7 @@ export class SyncEngine {
   private pendingCount = 0;
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private onStatus?: (message: string) => void;
+  private autoSyncEnabled: () => boolean = () => false;
 
   constructor(onStatus?: (message: string) => void) {
     this.localRoot = getLocalVaultPath();
@@ -82,6 +83,78 @@ export class SyncEngine {
 
   getLocalRoot(): string {
     return this.localRoot;
+  }
+
+  bindAutoSync(getter: () => boolean): void {
+    this.autoSyncEnabled = getter;
+  }
+
+  private async queueUpload(relativePath: string): Promise<void> {
+    const norm = relativePath.replace(/\\/g, '/');
+    const state = await this.stateStore.load();
+    this.stateStore.enqueueUpload(state, norm);
+    await this.stateStore.save(state);
+    this.pendingCount = this.stateStore.pendingCount(state);
+    if (this.pendingCount > 0) {
+      this.status(`Ожидает синхронизации: ${this.pendingCount}`);
+    }
+  }
+
+  private async queueDelete(relativePath: string): Promise<void> {
+    const norm = relativePath.replace(/\\/g, '/');
+    const state = await this.stateStore.load();
+    this.stateStore.enqueueDelete(state, norm);
+    await this.stateStore.save(state);
+    this.pendingCount = this.stateStore.pendingCount(state);
+    if (this.pendingCount > 0) {
+      this.status(`Ожидает синхронизации: ${this.pendingCount}`);
+    }
+  }
+
+  /** Загрузить файл в облако или поставить в очередь (зависит от autoSync) */
+  async pushFileOrQueue(relativePath: string, content: string): Promise<void> {
+    if (this.autoSyncEnabled()) {
+      await this.pushFile(relativePath, content);
+    } else {
+      await this.queueUpload(relativePath);
+    }
+  }
+
+  async pushDeleteOrQueue(relativePath: string): Promise<void> {
+    if (this.autoSyncEnabled()) {
+      await this.pushDelete(relativePath);
+    } else {
+      await this.queueDelete(relativePath);
+    }
+  }
+
+  async pushRenameOrQueue(oldPath: string, newPath: string): Promise<void> {
+    if (this.autoSyncEnabled()) {
+      await this.pushRename(oldPath, newPath);
+      return;
+    }
+    const state = await this.stateStore.load();
+    this.stateStore.enqueueDelete(state, oldPath.replace(/\\/g, '/'));
+    this.stateStore.enqueueUpload(state, newPath.replace(/\\/g, '/'));
+    await this.stateStore.save(state);
+    this.pendingCount = this.stateStore.pendingCount(state);
+    if (this.pendingCount > 0) {
+      this.status(`Ожидает синхронизации: ${this.pendingCount}`);
+    }
+  }
+
+  async pushFolderOrQueue(relativePath: string): Promise<void> {
+    if (this.autoSyncEnabled()) {
+      await this.pushFolder(relativePath);
+    }
+    // в ручном режиме папка создастся при загрузке файлов
+  }
+
+  async clearArchiveRemoteOrQueue(): Promise<void> {
+    if (this.autoSyncEnabled()) {
+      await this.clearArchiveRemote();
+    }
+    // в ручном режиме — при следующей синхронизации
   }
 
   private status(msg: string): void {
@@ -461,19 +534,13 @@ export class SyncEngine {
     }
   }
 
-  async ensureStructure(): Promise<{ isNew: boolean }> {
-    const welcomeExists = await this.api.exists(`${YANDEX_CLOUD_ROOT}/notes/dobro-pozhalovat.md`);
-    const isNew = !welcomeExists;
-
-    await this.api.createFolder(YANDEX_CLOUD_ROOT);
-    await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/.merkaba`);
-
-    if (isNew) {
-      for (const folder of FOLDERS) {
-        await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/${folder}`);
-      }
-      await this.api.uploadText(`${YANDEX_CLOUD_ROOT}/README.md`, README_CONTENT);
-      await this.api.uploadText(`${YANDEX_CLOUD_ROOT}/notes/dobro-pozhalovat.md`, WELCOME_NOTE);
+  async ensureLocalStructure(): Promise<{ isNew: boolean }> {
+    const welcomePath = path.join(this.localRoot, 'notes/dobro-pozhalovat.md');
+    let isNew = false;
+    try {
+      await fs.access(welcomePath);
+    } catch {
+      isNew = true;
     }
 
     await fs.mkdir(this.localRoot, { recursive: true });
@@ -481,15 +548,66 @@ export class SyncEngine {
       await fs.mkdir(path.join(this.localRoot, folder), { recursive: true });
     }
     await fs.mkdir(path.join(this.localRoot, '.merkaba'), { recursive: true });
-    await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/_archive`);
+
+    if (isNew) {
+      const readmePath = path.join(this.localRoot, 'README.md');
+      try {
+        await fs.access(readmePath);
+      } catch {
+        await fs.writeFile(readmePath, README_CONTENT, 'utf-8');
+      }
+      await fs.writeFile(welcomePath, WELCOME_NOTE, 'utf-8');
+    }
 
     return { isNew };
   }
 
+  async ensureCloudStructure(): Promise<void> {
+    const welcomeExists = await this.api.exists(`${YANDEX_CLOUD_ROOT}/notes/dobro-pozhalovat.md`);
+
+    await this.api.createFolder(YANDEX_CLOUD_ROOT);
+    await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/.merkaba`);
+
+    if (!welcomeExists) {
+      for (const folder of FOLDERS) {
+        await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/${folder}`);
+      }
+      await this.api.uploadText(`${YANDEX_CLOUD_ROOT}/README.md`, README_CONTENT);
+      await this.api.uploadText(`${YANDEX_CLOUD_ROOT}/notes/dobro-pozhalovat.md`, WELCOME_NOTE);
+    }
+
+    await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/_archive`);
+  }
+
+  private backgroundSyncPromise: Promise<void> | null = null;
+
+  /** Синхронизация с облаком в фоне — не блокирует UI */
+  runBackgroundSync(onComplete?: () => void): Promise<void> {
+    if (this.backgroundSyncPromise) {
+      return this.backgroundSyncPromise;
+    }
+
+    this.backgroundSyncPromise = (async () => {
+      try {
+        await this.ensureCloudStructure();
+        await this.syncAll();
+      } catch {
+        // syncAll уже сообщает об ошибке через status
+      } finally {
+        this.backgroundSyncPromise = null;
+        onComplete?.();
+      }
+    })();
+
+    return this.backgroundSyncPromise;
+  }
+
+  async initializeLocal(): Promise<{ isNew: boolean }> {
+    return this.ensureLocalStructure();
+  }
+
   async initialize(): Promise<{ isNew: boolean }> {
-    const { isNew } = await this.ensureStructure();
-    await this.syncAll();
-    return { isNew };
+    return this.initializeLocal();
   }
 }
 

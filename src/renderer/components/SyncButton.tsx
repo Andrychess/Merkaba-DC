@@ -21,13 +21,19 @@ export function SyncButton() {
 
   useEffect(() => {
     refreshStatus();
-  }, [statusMessage, refreshStatus]);
+    const timer = setInterval(refreshStatus, 15_000);
+    return () => clearInterval(timer);
+  }, [refreshStatus]);
 
   useEffect(() => {
     if (!syncStatus.syncing) return;
     const timer = setInterval(refreshStatus, 500);
     return () => clearInterval(timer);
   }, [syncStatus.syncing, refreshStatus]);
+
+  useEffect(() => {
+    refreshStatus();
+  }, [statusMessage, refreshStatus]);
 
   const syncing = syncStatus.syncing;
 
@@ -57,7 +63,11 @@ export function SyncButton() {
         }`}
       />
       <span className={syncStatus.error && !syncing ? 'text-red-400' : undefined}>
-        {syncing ? 'Синхронизация...' : 'Синхронизировать'}
+        {syncing
+          ? 'Синхронизация...'
+          : syncStatus.pendingCount && syncStatus.pendingCount > 0
+            ? `Синхронизировать (${syncStatus.pendingCount})`
+            : 'Синхронизировать'}
       </span>
     </button>
   );

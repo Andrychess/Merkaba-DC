@@ -59,15 +59,19 @@ export function scheduleCloudUpload(relativePath: string, content: string): void
   );
 }
 
-async function flushCloudUpload(norm: string): Promise<void> {
+async function flushCloudUpload(norm: string, force = false): Promise<void> {
   const content = pendingUploads.get(norm);
   if (!content || !getSync) return;
   pendingUploads.delete(norm);
 
   try {
-    await getSync().pushFile(norm, content);
+    if (force) {
+      await getSync().pushFile(norm, content);
+    } else {
+      await getSync().pushFileOrQueue(norm, content);
+    }
   } catch {
-    // pushFile ставит файл в очередь при ошибке (в т.ч. 423)
+    // pushFile / pushFileOrQueue ставят файл в очередь при ошибке
   }
 }
 
@@ -82,7 +86,7 @@ export async function uploadCloudNow(relativePath: string, content: string): Pro
   }
   if (!getSync) return;
   try {
-    await getSync().pushFile(norm, content);
+    await getSync().pushFileOrQueue(norm, content);
   } catch {
     // очередь отложенных загрузок
   }
@@ -97,6 +101,6 @@ export async function flushAllCloudUploads(): Promise<void> {
       clearTimeout(timer);
       uploadTimers.delete(norm);
     }
-    await flushCloudUpload(norm);
+    await flushCloudUpload(norm, true);
   }
 }

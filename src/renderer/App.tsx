@@ -39,17 +39,18 @@ export default function App() {
   useEffect(() => {
     if (!initialized) return;
 
-    refreshFileTree();
+    // Обогащаем дерево заголовками и превью в фоне (первый показ — быстрый скан)
+    void refreshFileTree();
 
     let treeTimer: ReturnType<typeof setTimeout> | null = null;
-    const TREE_REFRESH_MS = 1200;
+    const TREE_REFRESH_MS = 400;
 
     const scheduleTreeRefresh = () => {
       if (treeTimer) clearTimeout(treeTimer);
       treeTimer = setTimeout(() => {
         treeTimer = null;
-        refreshFileTree();
-        loadConflicts();
+        void refreshFileTree();
+        void loadConflicts();
       }, TREE_REFRESH_MS);
     };
 

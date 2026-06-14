@@ -104,6 +104,20 @@ export function SettingsDialog() {
             <p className="text-xs text-merkaba-muted mb-3">
               {authLogin ? `Аккаунт: ${authLogin}` : 'Облако: disk:/Merkaba/'}
             </p>
+            <label className="flex items-center gap-2.5 mb-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={local.autoSync}
+                onChange={(e) => setLocal({ ...local, autoSync: e.target.checked })}
+                className="w-4 h-4 rounded border-merkaba-border bg-merkaba-bg accent-merkaba-accent"
+              />
+              <span className="text-sm text-merkaba-text">Автосинхронизация</span>
+            </label>
+            <p className="text-[11px] text-merkaba-muted mb-3 leading-relaxed">
+              {local.autoSync
+                ? 'Изменения отправляются в облако автоматически каждую минуту.'
+                : 'Синхронизация только вручную — кнопка в шапке или ниже.'}
+            </p>
             <button onClick={() => syncPull()} className="btn-secondary !text-xs">
               Синхронизировать сейчас
             </button>

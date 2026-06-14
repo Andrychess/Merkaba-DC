@@ -32,7 +32,7 @@ export class PinnedStore {
   private async write(data: PinnedData): Promise<void> {
     const content = JSON.stringify(data, null, 2);
     await this.fs.writeFile(PINNED_PATH, content);
-    await this.sync().pushFile(PINNED_PATH, content);
+    await this.sync().pushFileOrQueue(PINNED_PATH, content);
   }
 
   private async filterExisting(paths: string[]): Promise<string[]> {

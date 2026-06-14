@@ -7,6 +7,7 @@ import {
   persistSpaceSymbols,
   resolveActiveSpace,
   sanitizeSpaceName,
+  getSpaceSymbol,
 } from '@shared/spaces';
 import { applyTextNoteTitle } from '@renderer/utils/note-helpers';
 import {
@@ -65,8 +66,7 @@ export const createFilesSlice: AppSlice<Pick<
       if (resolvedSpace !== activeSpace) {
         persistActiveSpace(resolvedSpace);
       }
-      await get().refreshArchiveTree();
-      await get().loadPinnedNotes();
+      await Promise.all([get().refreshArchiveTree(), get().loadPinnedNotes()]);
     } catch (err) {
       set({ statusMessage: `Ошибка обновления: ${err}` });
     }
@@ -259,7 +259,7 @@ export const createFilesSlice: AppSlice<Pick<
         set({ activeSpace: resolved, selectedFolder: resolved });
       }
       set({
-        statusMessage: wasSpace ? 'Пространство перемещено в архив' : 'Папка перемещена в архив',
+        statusMessage: wasSpace ? 'Пространство удалено' : 'Папка удалена',
       });
     } catch (err) {
       set({ statusMessage: `Ошибка архивации: ${err}` });
@@ -365,8 +365,9 @@ export const createFilesSlice: AppSlice<Pick<
       const wasSpace = isSpaceId(normalized);
 
       let nextSpaceSymbols = spaceSymbols;
-      if (wasSpace && spaceSymbols[normalized]) {
-        nextSpaceSymbols = { ...spaceSymbols, [newPath]: spaceSymbols[normalized] };
+      const oldSym = spaceSymbols[normalized] ?? (wasSpace ? getSpaceSymbol(normalized, spaceSymbols) : null);
+      if (oldSym) {
+        nextSpaceSymbols = { ...spaceSymbols, [newPath]: oldSym };
         delete nextSpaceSymbols[normalized];
         persistSpaceSymbols(nextSpaceSymbols);
       }

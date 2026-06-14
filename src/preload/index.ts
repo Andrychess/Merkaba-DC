@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { Config } from '../shared/types';
+import type { Config, TreeScanOptions } from '../shared/types';
 
 contextBridge.exposeInMainWorld('merkaba', {
   readFile: (path: string) => ipcRenderer.invoke('fs:readFile', path),
@@ -13,8 +13,8 @@ contextBridge.exposeInMainWorld('merkaba', {
   createFolder: (path: string) => ipcRenderer.invoke('fs:createFolder', path),
   createNote: (folderPath: string, name: string, noteType?: string) =>
     ipcRenderer.invoke('fs:createNote', folderPath, name, noteType),
-  getFileTree: () => ipcRenderer.invoke('fs:getFileTree'),
-  getArchiveTree: () => ipcRenderer.invoke('fs:getArchiveTree'),
+  getFileTree: (options?: TreeScanOptions) => ipcRenderer.invoke('fs:getFileTree', options),
+  getArchiveTree: (options?: TreeScanOptions) => ipcRenderer.invoke('fs:getArchiveTree', options),
   clearArchive: () => ipcRenderer.invoke('fs:clearArchive'),
   getPinnedNotes: () => ipcRenderer.invoke('pinned:get'),
   pinNote: (path: string) => ipcRenderer.invoke('pinned:pin', path),
