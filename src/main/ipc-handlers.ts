@@ -12,6 +12,7 @@ import { ARCHIVE_FOLDER, isArchivePath, isProtectedPath } from '../shared/archiv
 import { SyncEngine, initLocalFileSystem } from './sync-engine';
 import {
   flushAllCloudUploads,
+  getPendingUploadPaths,
   initWriteCoordinator,
   rebuildSearchNow,
   scheduleCloudUpload,
@@ -203,10 +204,18 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return syncEngine?.getStatus() ?? { syncing: false, lastSync: null, error: null };
   });
 
+  ipcMain.handle('sync:fileStatuses', async () => {
+    if (!syncEngine) return {};
+    return syncEngine.getFileSyncStatuses(getPendingUploadPaths());
+  });
+
   ipcMain.handle('sync:pull', async () => {
-    await flushAllCloudUploads();
-    await getSync().ensureCloudStructure();
-    await getSync().syncAll();
+    await getSync().runPullSync(async () => {
+      getSync().reportProgress(2, 'Отправка локальных правок...');
+      await flushAllCloudUploads();
+      getSync().reportProgress(6, 'Проверка структуры на Диске...');
+      await getSync().ensureCloudStructure();
+    });
     await rebuildSearchNow();
     notifyFsChanged();
   });

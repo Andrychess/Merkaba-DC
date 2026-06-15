@@ -1,43 +1,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import {
-  folderEditInitialName,
-  getFolderSymbol,
-  getSpaceSymbol,
-  isSpaceId,
-  normalizeSpaceSymbol,
-  sanitizeSpaceName,
-} from '@shared/spaces';
+import { folderEditInitialName, getFolderSymbol, sanitizeSpaceName } from '@shared/spaces';
 import { useAppStore } from '../stores/appStore';
 import { SpaceSymbolPicker } from './SpaceSymbolPicker';
 
-interface FolderEditDialogProps {
-  folderPath: string;
-  folderName: string;
+interface FolderCreateDialogProps {
+  parentPath: string;
   onClose: () => void;
 }
 
-function folderPathSegment(path: string): string {
-  const norm = path.replace(/\\/g, '/');
-  const slash = norm.lastIndexOf('/');
-  return slash === -1 ? norm : norm.slice(slash + 1);
-}
-
-export function FolderEditDialog({ folderPath, folderName, onClose }: FolderEditDialogProps) {
-  const spaceSymbols = useAppStore((s) => s.spaceSymbols);
-  const renameFolder = useAppStore((s) => s.renameFolder);
+export function FolderCreateDialog({ parentPath, onClose }: FolderCreateDialogProps) {
+  const createNewFolder = useAppStore((s) => s.createNewFolder);
   const setSpaceSymbol = useAppStore((s) => s.setSpaceSymbol);
   const setStatusMessage = useAppStore((s) => s.setStatusMessage);
 
-  const isSpace = isSpaceId(folderPath);
-  const diskSegment = folderPathSegment(folderPath);
-  const initialLabel = folderEditInitialName(folderName);
-  const initialSymbol = isSpace
-    ? getSpaceSymbol(folderPath, spaceSymbols)
-    : (getFolderSymbol(folderPath, spaceSymbols) ?? '📁');
-
-  const [name, setName] = useState(initialLabel);
-  const [symbol, setSymbol] = useState(initialSymbol);
+  const [name, setName] = useState('');
+  const [symbol, setSymbol] = useState('📁');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -48,34 +26,23 @@ export function FolderEditDialog({ folderPath, folderName, onClose }: FolderEdit
   const trimmed = name.trim();
   const slugPreview = trimmed ? sanitizeSpaceName(trimmed) : '';
   const showSlugHint = Boolean(slugPreview && slugPreview !== trimmed);
-  const nameChanged = Boolean(slugPreview && slugPreview !== diskSegment);
 
-  const handleSave = async () => {
+  const handleCreate = async () => {
     if (saving || !trimmed || !slugPreview) return;
-
-    const normPath = folderPath.replace(/\\/g, '/');
-    let targetPath = normPath;
 
     setSaving(true);
     try {
-      if (nameChanged) {
-        await renameFolder(folderPath, trimmed);
-        targetPath = normPath.includes('/')
-          ? `${normPath.slice(0, normPath.lastIndexOf('/') + 1)}${slugPreview}`
-          : slugPreview;
+      const path = await createNewFolder(parentPath, trimmed);
+      if (path) {
+        setSpaceSymbol(path, symbol);
       }
-
-      const nextSymbol = normalizeSpaceSymbol(symbol) || initialSymbol;
-      setSpaceSymbol(targetPath, nextSymbol);
       onClose();
     } catch {
-      setStatusMessage('Не удалось сохранить папку');
+      setStatusMessage('Не удалось создать папку');
     } finally {
       setSaving(false);
     }
   };
-
-  const title = isSpace ? 'Переименовать пространство' : 'Переименовать папку';
 
   const dialog = (
     <div
@@ -90,11 +57,9 @@ export function FolderEditDialog({ folderPath, folderName, onClose }: FolderEdit
           if (e.key === 'Escape') onClose();
         }}
       >
-        <h2 className="text-lg font-semibold text-merkaba-text mb-1">{title}</h2>
+        <h2 className="text-lg font-semibold text-merkaba-text mb-1">Новая папка</h2>
         <p className="text-xs text-merkaba-muted mb-4">
-          {isSpace
-            ? 'Название и символ отображаются в переключателе пространств.'
-            : 'Символ показывается в дереве файлов вместо стандартной иконки.'}
+          Внутри «{folderEditInitialName(parentPath.split('/').pop() ?? parentPath)}»
         </p>
 
         <label className="block text-xs text-merkaba-muted mb-1.5">Символ</label>
@@ -109,10 +74,10 @@ export function FolderEditDialog({ folderPath, folderName, onClose }: FolderEdit
             e.stopPropagation();
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault();
-              void handleSave();
+              void handleCreate();
             }
           }}
-          placeholder={isSpace ? 'например: работа' : 'имя папки'}
+          placeholder="например: проекты"
           className="input-field mb-1 app-no-drag"
           autoComplete="off"
         />
@@ -129,11 +94,11 @@ export function FolderEditDialog({ folderPath, folderName, onClose }: FolderEdit
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => void handleSave()}
+            onClick={() => void handleCreate()}
             disabled={!trimmed || !slugPreview || saving}
             className="btn-primary flex-1"
           >
-            {saving ? 'Сохранение...' : 'Сохранить'}
+            {saving ? 'Создание...' : 'Создать'}
           </button>
           <button type="button" onClick={onClose} className="btn-ghost">
             Отмена

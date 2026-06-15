@@ -16,6 +16,7 @@ import {
   insertFileIntoTree,
   insertFolderIntoTree,
   remapPath,
+  treeHasPath,
 } from '@renderer/utils/note-tree';
 import type { AppSlice, AppState } from '../app-state';
 
@@ -179,14 +180,25 @@ export const createFilesSlice: AppSlice<Pick<
     }
   },
 
-  createNewFolder: async (parentPath) => {
+  createNewFolder: async (parentPath, rawName) => {
     const { activeSpace, selectedFolder } = get();
     let base = parentPath ?? selectedFolder ?? activeSpace;
     if (base === ARCHIVE_FOLDER || base.startsWith(`${ARCHIVE_FOLDER}/`)) {
       base = activeSpace;
     }
-    const name = `papka-${Date.now()}`;
-    const path = `${base}/${name}`;
+
+    const slug = sanitizeSpaceName(rawName?.trim() ?? '');
+    if (!slug) {
+      set({ statusMessage: 'Недопустимое имя папки' });
+      return null;
+    }
+
+    const path = `${base}/${slug}`;
+    if (treeHasPath(get().fileTree, path)) {
+      set({ statusMessage: 'Папка с таким именем уже есть', selectedFolder: path });
+      return path;
+    }
+
     try {
       await window.merkaba.createFolder(path);
       set((s) => ({
@@ -195,8 +207,10 @@ export const createFilesSlice: AppSlice<Pick<
         statusMessage: 'Папка создана',
       }));
       void get().refreshFileTree();
+      return path;
     } catch (err) {
       set({ statusMessage: `Ошибка создания папки: ${err}` });
+      return null;
     }
   },
 

@@ -1,11 +1,17 @@
 import { defaultConfig } from '@shared/types';
 import { loadSpaceSymbols, persistActiveSpace, persistSpaceSymbols } from '@shared/spaces';
+import {
+  clampSidebarPanelWidth,
+  loadSidebarPanelWidth,
+  persistSidebarPanelWidth,
+} from '@renderer/utils/sidebar-layout';
 import type { AppSlice, AppState } from '../app-state';
 
 export const createUiSlice: AppSlice<Pick<
   AppState,
   | 'sidebarMode'
   | 'sidebarPanelOpen'
+  | 'sidebarPanelWidth'
   | 'editorMode'
   | 'searchQuery'
   | 'searchResults'
@@ -26,6 +32,7 @@ export const createUiSlice: AppSlice<Pick<
   | 'setSidebarMode'
   | 'toggleSidebarPanel'
   | 'setSidebarPanelOpen'
+  | 'setSidebarPanelWidth'
   | 'setEditorMode'
   | 'toggleEditorMode'
   | 'setSearchQuery'
@@ -39,9 +46,13 @@ export const createUiSlice: AppSlice<Pick<
   | 'setActiveSpace'
   | 'setSpaceSymbol'
   | 'setConfig'
+  | 'newFolderDialogParent'
+  | 'openNewFolderDialog'
+  | 'closeNewFolderDialog'
 >> = (set, get) => ({
   sidebarMode: 'files',
   sidebarPanelOpen: true,
+  sidebarPanelWidth: loadSidebarPanelWidth(),
   editorMode: 'preview',
   searchQuery: '',
   searchResults: [],
@@ -58,11 +69,17 @@ export const createUiSlice: AppSlice<Pick<
   editorBodyFocusToken: 0,
   documentFindToken: 0,
   documentFindMode: 'find',
+  newFolderDialogParent: null as string | null,
 
   setInitialized: (value) => set({ initialized: value }),
   setSidebarMode: (mode) => set({ sidebarMode: mode }),
   toggleSidebarPanel: () => set((s) => ({ sidebarPanelOpen: !s.sidebarPanelOpen })),
   setSidebarPanelOpen: (open) => set({ sidebarPanelOpen: open }),
+  setSidebarPanelWidth: (width) => {
+    const next = clampSidebarPanelWidth(width);
+    persistSidebarPanelWidth(next);
+    set({ sidebarPanelWidth: next });
+  },
   setEditorMode: (mode) => set({ editorMode: mode }),
   toggleEditorMode: () =>
     set((s) => ({ editorMode: s.editorMode === 'source' ? 'preview' : 'source' })),
@@ -93,4 +110,13 @@ export const createUiSlice: AppSlice<Pick<
     set({ spaceSymbols: next });
   },
   setConfig: (config) => set({ config }),
+  openNewFolderDialog: (parentPath) => {
+    const { activeSpace, selectedFolder } = get();
+    set({
+      newFolderDialogParent: parentPath ?? selectedFolder ?? activeSpace,
+      sidebarMode: 'files',
+      sidebarPanelOpen: true,
+    });
+  },
+  closeNewFolderDialog: () => set({ newFolderDialogParent: null }),
 });

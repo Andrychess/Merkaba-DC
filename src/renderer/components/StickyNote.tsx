@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Sticker } from '@shared/types';
+import { IconEye } from './Icons';
 import { getStickerStyle } from './StickerEditor';
 
 const STICKER_WIDTH = 168;
@@ -92,14 +93,11 @@ export function StickyNote({
       const y = Math.max(0, originY + (e.clientY - startY));
       setPos({ x, y });
       onDragEnd(x, y);
-    } else {
-      onEdit();
     }
   };
 
   return (
     <div
-      role="button"
       tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -121,9 +119,22 @@ export function StickyNote({
       }}
     >
       <span className="sticky-pin" aria-hidden />
+      <button
+        type="button"
+        className="sticky-note-view"
+        title="Редактировать"
+        aria-label="Редактировать стикер"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        <IconEye className="w-3.5 h-3.5" />
+      </button>
       <h3 className="sticky-title">{sticker.title}</h3>
       <p className="sticky-excerpt">
-        {sticker.content || 'Пустой стикер — нажмите, чтобы написать'}
+        {sticker.content || 'Пустой стикер'}
       </p>
 
       {linkedPath && (

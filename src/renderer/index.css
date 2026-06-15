@@ -374,6 +374,34 @@ body {
   line-height: 1;
 }
 
+.sticky-note-view {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.1);
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+
+.sticky-note:hover .sticky-note-view,
+.sticky-note:focus-within .sticky-note-view {
+  opacity: 0.85;
+}
+
+.sticky-note-view:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.18);
+}
+
 .sticky-tags {
   display: flex;
   flex-wrap: wrap;

@@ -1,6 +1,7 @@
 import type { FileSystem } from './file-system';
 import type { SearchIndexer } from './indexer';
 import type { SyncEngine } from './sync-engine';
+import { mapPool } from './async-pool';
 
 const REBUILD_DEBOUNCE_MS = 900;
 const UPLOAD_DEBOUNCE_MS = 2500;
@@ -92,6 +93,11 @@ export async function uploadCloudNow(relativePath: string, content: string): Pro
   }
 }
 
+/** Пути файлов, ожидающих отправки в облако (ещё не в очереди sync-state) */
+export function getPendingUploadPaths(): string[] {
+  return [...pendingUploads.keys()];
+}
+
 /** Перед ручной синхронизацией — отправить все отложенные правки */
 export async function flushAllCloudUploads(): Promise<void> {
   const paths = [...pendingUploads.keys()];
@@ -101,6 +107,13 @@ export async function flushAllCloudUploads(): Promise<void> {
       clearTimeout(timer);
       uploadTimers.delete(norm);
     }
-    await flushCloudUpload(norm, true);
   }
+
+  await mapPool(
+    paths,
+    async (norm) => {
+      await flushCloudUpload(norm, true);
+    },
+    5
+  );
 }

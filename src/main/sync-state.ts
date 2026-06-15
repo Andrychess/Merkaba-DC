@@ -57,7 +57,9 @@ export class SyncStateStore {
     relativePath: string,
     localMd5: string,
     cloudMd5?: string,
-    cloudModified?: string
+    cloudModified?: string,
+    localMtimeMs?: number,
+    localSize?: number
   ): void {
     const norm = relativePath.replace(/\\/g, '/');
     state.files[norm] = {
@@ -65,6 +67,8 @@ export class SyncStateStore {
       cloudMd5: cloudMd5 ?? localMd5,
       cloudModified,
       lastSyncedAt: new Date().toISOString(),
+      ...(localMtimeMs !== undefined ? { localMtimeMs } : {}),
+      ...(localSize !== undefined ? { localSize } : {}),
     };
     this.clearPendingForPath(state, norm);
   }

@@ -37,7 +37,7 @@ export function resolveActiveSpace(fileTree: FileNode[], preferred?: string | nu
     // ignore
   }
   if (spaces.some((s) => s.path === 'notes')) return 'notes';
-  return spaces[0]?.path ?? 'notes';
+  return spaces[0]?.path ?? '';
 }
 
 export function persistActiveSpace(spaceId: string): void {
@@ -119,12 +119,16 @@ export function formatSpaceDisplay(spaceId: string, symbols?: Record<string, str
   return `${symbol} ${label}`;
 }
 
+/** Имя для поля редактирования (slug → читаемый вид) */
+export function folderEditInitialName(folderName: string): string {
+  return folderName.replace(/-/g, ' ');
+}
+
 export function sanitizeSpaceName(name: string): string {
   return name
     .trim()
-    .toLowerCase()
     .replace(/\s+/g, '-')
-    .replace(/[^a-zа-яё0-9_-]/gi, '')
+    .replace(/[^a-zA-Zа-яА-ЯёЁ0-9_-]/g, '')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 }

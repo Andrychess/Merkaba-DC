@@ -19,6 +19,7 @@ export interface AppState {
   activeFile: string | null;
   sidebarMode: 'files' | 'board' | 'graph' | 'archive';
   sidebarPanelOpen: boolean;
+  sidebarPanelWidth: number;
   editorMode: 'source' | 'preview';
   searchQuery: string;
   searchResults: SearchResult[];
@@ -36,11 +37,13 @@ export interface AppState {
   selectedFolder: string;
   activeSpace: string;
   spaceSymbols: Record<string, string>;
+  newFolderDialogParent: string | null;
 
   setInitialized: (value: boolean) => void;
   setSidebarMode: (mode: AppState['sidebarMode']) => void;
   toggleSidebarPanel: () => void;
   setSidebarPanelOpen: (open: boolean) => void;
+  setSidebarPanelWidth: (width: number) => void;
   setEditorMode: (mode: AppState['editorMode']) => void;
   toggleEditorMode: () => void;
   setSearchQuery: (query: string) => void;
@@ -54,6 +57,8 @@ export interface AppState {
   setActiveSpace: (spaceId: string) => void;
   setSpaceSymbol: (spaceId: string, symbol: string) => void;
   setConfig: (config: Config) => void;
+  openNewFolderDialog: (parentPath?: string) => void;
+  closeNewFolderDialog: () => void;
 
   restoreSession: () => Promise<boolean>;
   confirmAuthCode: (code: string) => Promise<void>;
@@ -77,7 +82,7 @@ export interface AppState {
   toggleCheckbox: (filePath: string, line: number) => Promise<void>;
   resolveConflict: (file: string, choice: 'main' | 'conflict') => Promise<void>;
   createNewNote: (folderPath?: string, noteType?: NoteType) => Promise<void>;
-  createNewFolder: (parentPath?: string) => Promise<void>;
+  createNewFolder: (parentPath?: string, name?: string) => Promise<string | null>;
   createSpaceWithName: (name: string, symbol?: string) => Promise<void>;
   deleteFile: (filePath: string) => Promise<void>;
   deleteFolder: (folderPath: string) => Promise<void>;

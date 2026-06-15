@@ -12,8 +12,8 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useAutoSave } from './hooks/useAutoSave';
 import { useTheme } from './hooks/useTheme';
-import { LogoMark, LogoIcon, IconSettings, IconCloud } from './components/Icons';
-import { SyncButton } from './components/SyncButton';
+import { LogoMark, LogoIcon, IconSettings } from './components/Icons';
+import { SyncControls } from './components/SyncControls';
 import { WindowControls } from './components/WindowControls';
 
 export default function App() {
@@ -90,12 +90,8 @@ export default function App() {
           <span className="text-sm font-semibold tracking-tight text-merkaba-text">Merkaba</span>
         </div>
 
-        <div className="ml-4 flex items-center app-no-drag">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-merkaba-elevated border border-merkaba-border">
-            <IconCloud className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-xs text-merkaba-muted">Яндекс.Диск</span>
-          </div>
-          <SyncButton />
+        <div className="ml-4 app-no-drag">
+          <SyncControls />
         </div>
 
         {statusMessage && (

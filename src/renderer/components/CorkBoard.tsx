@@ -91,7 +91,7 @@ export function CorkBoard() {
           <p className="text-xs text-amber-100/50 mt-0.5">
             {stickers.length} {countLabel}
             {linkedCount > 0 && ` · ${linkedCount} со ссылкой на заметку`}
-            {' · '}клик — редактировать, перетащите — переместить
+            {' · '}глаз — редактировать, перетащите — переместить
           </p>
         </div>
         <button

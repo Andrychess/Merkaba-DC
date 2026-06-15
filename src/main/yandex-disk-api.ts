@@ -1,7 +1,18 @@
 import { getValidAccessToken } from './yandex-oauth';
 import { YANDEX_DISK_API, YANDEX_CLOUD_ROOT, type DiskResource } from '../shared/yandex';
 
+function isDiskNotFoundError(err: unknown): boolean {
+  const msg = String(err);
+  return msg.includes('404') && (msg.includes('DiskNotFoundError') || msg.includes('Resource not found'));
+}
+
 export class YandexDiskApi {
+  private knownFolders = new Set<string>();
+
+  resetFolderCache(): void {
+    this.knownFolders.clear();
+  }
+
   private async headers(): Promise<Record<string, string>> {
     const token = await getValidAccessToken();
     return {
@@ -41,23 +52,34 @@ export class YandexDiskApi {
 
   /** Создать папку */
   async createFolder(cloudPath: string): Promise<void> {
-    if (await this.exists(cloudPath)) return;
+    if (this.knownFolders.has(cloudPath)) return;
+    if (await this.exists(cloudPath)) {
+      this.knownFolders.add(cloudPath);
+      return;
+    }
     await this.request(
       `${YANDEX_DISK_API}/resources?path=${encodeURIComponent(cloudPath)}`,
       { method: 'PUT' }
     );
+    this.knownFolders.add(cloudPath);
   }
 
-  /** Список содержимого папки */
+  /** Список содержимого папки; отсутствующая папка — пустой список */
   async listFolder(cloudPath: string): Promise<DiskResource[]> {
     const limit = 1000;
     let offset = 0;
     const items: DiskResource[] = [];
 
     while (true) {
-      const data = await this.request<DiskResource>(
-        `${YANDEX_DISK_API}/resources?path=${encodeURIComponent(cloudPath)}&limit=${limit}&offset=${offset}&fields=_embedded.items.name,_embedded.items.path,_embedded.items.type,_embedded.items.modified,_embedded.items.md5,_embedded.items.size`
-      );
+      let data: DiskResource;
+      try {
+        data = await this.request<DiskResource>(
+          `${YANDEX_DISK_API}/resources?path=${encodeURIComponent(cloudPath)}&limit=${limit}&offset=${offset}&fields=_embedded.items.name,_embedded.items.path,_embedded.items.type,_embedded.items.modified,_embedded.items.md5,_embedded.items.size`
+        );
+      } catch (err) {
+        if (offset === 0 && isDiskNotFoundError(err)) return [];
+        throw err;
+      }
 
       const batch = data._embedded?.items ?? [];
       items.push(...batch);
@@ -69,18 +91,34 @@ export class YandexDiskApi {
     return items;
   }
 
-  /** Рекурсивный список всех файлов под cloudPath */
+  /** Рекурсивный список всех файлов под cloudPath (подпапки — параллельно) */
   async listAllFiles(cloudPath: string): Promise<DiskResource[]> {
-    const files: DiskResource[] = [];
     const items = await this.listFolder(cloudPath);
+    const files: DiskResource[] = [];
+    const subdirs: DiskResource[] = [];
 
     for (const item of items) {
       if (item.type === 'file') {
         files.push(item);
       } else if (item.type === 'dir') {
-        const nested = await this.listAllFiles(item.path);
-        files.push(...nested);
+        subdirs.push(item);
       }
+    }
+
+    if (subdirs.length === 0) return files;
+
+    const nested = await Promise.all(
+      subdirs.map(async (dir) => {
+        try {
+          return await this.listAllFiles(dir.path);
+        } catch (err) {
+          if (isDiskNotFoundError(err)) return [];
+          throw err;
+        }
+      })
+    );
+    for (const batch of nested) {
+      files.push(...batch);
     }
 
     return files;

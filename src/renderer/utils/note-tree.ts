@@ -68,6 +68,18 @@ export function collectFilePaths(tree: FileNode[]): Set<string> {
   return paths;
 }
 
+export function treeHasPath(tree: FileNode[], targetPath: string): boolean {
+  const norm = targetPath.replace(/\\/g, '/');
+  const walk = (nodes: FileNode[]): boolean => {
+    for (const node of nodes) {
+      if (node.path === norm) return true;
+      if (node.children?.length && walk(node.children)) return true;
+    }
+    return false;
+  };
+  return walk(tree);
+}
+
 export function setTreeNodeColor(tree: FileNode[], path: string, color: string | null): FileNode[] {
   return tree.map((node) => {
     if (node.type === 'file' && node.path === path) {

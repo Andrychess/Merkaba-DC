@@ -8,6 +8,7 @@ import type {
   TreeScanOptions,
 } from './types';
 import type { AuthStatus, SyncStatus, VaultInitResult } from './yandex';
+import type { FileSyncStatusMap } from './sync';
 
 export interface MerkabaAPI {
   readFile: (path: string) => Promise<string>;
@@ -68,6 +69,7 @@ export interface MerkabaAPI {
   restoreSession: () => Promise<VaultInitResult | null>;
   syncPull: () => Promise<void>;
   getSyncStatus: () => Promise<SyncStatus>;
+  getFileSyncStatuses: () => Promise<FileSyncStatusMap>;
 }
 
 declare global {

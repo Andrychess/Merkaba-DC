@@ -36,6 +36,8 @@ export interface SyncStatus {
   lastSync: string | null;
   error: string | null;
   pendingCount?: number;
+  progress?: number;
+  progressLabel?: string;
 }
 
 export interface AuthStatus {

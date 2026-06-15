@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FileNode } from '@shared/types';
 import { getNoteColorHex } from '@shared/note-colors';
 import { ROOT_DROP_ID } from '@shared/archive';
@@ -11,7 +11,15 @@ import { NoteTypeIcon } from './NoteTypeIcon';
 import { NoteColorPicker } from './NoteColorPicker';
 import { SpaceSwitcher } from './SpaceSwitcher';
 import { FolderEditDialog } from './FolderEditDialog';
+import { FolderCreateDialog } from './FolderCreateDialog';
 import { NoteCreateMenu } from './NoteCreateMenu';
+import { SyncFileBadge, SyncLegend } from './SyncFileBadge';
+import {
+  resolveFileSyncStatus,
+  treeHasPendingSync,
+  useFileSyncStatuses,
+} from '../hooks/useFileSyncStatuses';
+import type { FileSyncStatusMap } from '@shared/sync';
 
 const DRAG_PATH = 'application/x-merkaba-path';
 const DRAG_TYPE = 'application/x-merkaba-type';
@@ -21,9 +29,18 @@ interface FileTreeItemProps {
   depth: number;
   dragOverPath: string | null;
   onDragOverPath: (path: string | null) => void;
+  fileSyncStatuses: FileSyncStatusMap;
+  dirtyPaths: ReadonlySet<string>;
 }
 
-function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeItemProps) {
+function FileTreeItem({
+  node,
+  depth,
+  dragOverPath,
+  onDragOverPath,
+  fileSyncStatuses,
+  dirtyPaths,
+}: FileTreeItemProps) {
   const [expanded, setExpanded] = useState(depth < 2);
   const [showMenu, setShowMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -39,7 +56,7 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
   const renameFolder = useAppStore((s) => s.renameFolder);
   const moveItem = useAppStore((s) => s.moveItem);
   const createNewNote = useAppStore((s) => s.createNewNote);
-  const createNewFolder = useAppStore((s) => s.createNewFolder);
+  const openNewFolderDialog = useAppStore((s) => s.openNewFolderDialog);
   const pinnedNotes = useAppStore((s) => s.pinnedNotes);
   const pinNote = useAppStore((s) => s.pinNote);
   const unpinNote = useAppStore((s) => s.unpinNote);
@@ -80,6 +97,12 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
   const canManageFolder =
     node.type === 'folder' && !isArchivePath(node.path) && node.path !== 'attachments';
   const folderLabel = formatSpaceLabel(node.name);
+  const fileSyncStatus =
+    node.type === 'file'
+      ? resolveFileSyncStatus(node.path, fileSyncStatuses, dirtyPaths.has(node.path))
+      : undefined;
+  const folderHasUnsynced =
+    node.type === 'folder' && treeHasPendingSync(node, fileSyncStatuses, dirtyPaths);
 
   const handleRename = async () => {
     if (newName && newName !== displayTitle) {
@@ -187,6 +210,7 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
                 <IconFolder className="w-4 h-4 shrink-0 text-amber-400/80" />
               )}
               <span className="truncate flex-1 py-0.5">{folderLabel}</span>
+              {folderHasUnsynced && <SyncFileBadge status="pending" />}
             </div>
             {canManageFolder && (
               <div className="flex shrink-0 self-stretch opacity-0 group-hover:opacity-100 transition-opacity">
@@ -239,8 +263,9 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
             </div>
 
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-1 px-3 py-2">
-              <div className="font-semibold text-sm text-merkaba-text truncate leading-tight">
-                {displayTitle}
+              <div className="font-semibold text-sm text-merkaba-text truncate leading-tight flex items-center gap-1.5">
+                <span className="truncate">{displayTitle}</span>
+                {fileSyncStatus && <SyncFileBadge status={fileSyncStatus} />}
               </div>
               {noteType === 'text' && (
                 <div className="text-[11px] leading-snug text-merkaba-muted line-clamp-2">
@@ -324,7 +349,7 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
                 </button>
                 <button
                   className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                  onClick={(e) => { e.stopPropagation(); createNewFolder(node.path); setShowMenu(false); }}
+                  onClick={(e) => { e.stopPropagation(); openNewFolderDialog(node.path); setShowMenu(false); }}
                 >
                   Новая подпапка
                 </button>
@@ -357,6 +382,8 @@ function FileTreeItem({ node, depth, dragOverPath, onDragOverPath }: FileTreeIte
           depth={depth + 1}
           dragOverPath={dragOverPath}
           onDragOverPath={onDragOverPath}
+          fileSyncStatuses={fileSyncStatuses}
+          dirtyPaths={dirtyPaths}
         />
       ))}
 
@@ -382,8 +409,16 @@ export function FileTree() {
   const openFile = useAppStore((s) => s.openFile);
   const fileSearchFocusToken = useAppStore((s) => s.fileSearchFocusToken);
   const createNewNote = useAppStore((s) => s.createNewNote);
-  const createNewFolder = useAppStore((s) => s.createNewFolder);
+  const openNewFolderDialog = useAppStore((s) => s.openNewFolderDialog);
+  const newFolderDialogParent = useAppStore((s) => s.newFolderDialogParent);
+  const closeNewFolderDialog = useAppStore((s) => s.closeNewFolderDialog);
   const moveItem = useAppStore((s) => s.moveItem);
+  const openFiles = useAppStore((s) => s.openFiles);
+  const { statuses: fileSyncStatuses } = useFileSyncStatuses();
+  const dirtyPaths = useMemo(
+    () => new Set(openFiles.filter((f) => f.isDirty).map((f) => f.path)),
+    [openFiles]
+  );
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [localQuery, setLocalQuery] = useState(searchQuery);
   const [searchPending, setSearchPending] = useState(false);
@@ -458,16 +493,26 @@ export function FileTree() {
             {!searchPending && searchResults.length === 0 && (
               <p className="text-merkaba-muted text-sm px-3 py-8 text-center">Ничего не найдено</p>
             )}
-            {searchResults.map((result) => (
+            {searchResults.map((result) => {
+              const syncStatus = resolveFileSyncStatus(
+                result.path,
+                fileSyncStatuses,
+                dirtyPaths.has(result.path)
+              );
+              return (
               <button
                 key={result.path}
                 onClick={() => openFile(result.path)}
                 className="w-full text-left px-3 py-2.5 mb-1 rounded-xl hover:bg-merkaba-hover transition-colors"
               >
-                <div className="font-medium text-sm text-merkaba-text truncate">{result.title}</div>
+                <div className="font-medium text-sm text-merkaba-text truncate flex items-center gap-1.5">
+                  <span className="truncate">{result.title}</span>
+                  {syncStatus && <SyncFileBadge status={syncStatus} />}
+                </div>
                 <div className="text-xs text-merkaba-muted truncate mt-0.5">{result.path}</div>
               </button>
-            ))}
+            );
+            })}
           </div>
         ) : (
           <>
@@ -509,12 +554,16 @@ export function FileTree() {
                   depth={0}
                   dragOverPath={dragOverPath}
                   onDragOverPath={setDragOverPath}
+                  fileSyncStatuses={fileSyncStatuses}
+                  dirtyPaths={dirtyPaths}
                 />
               ))
             )}
           </>
         )}
       </div>
+
+      <SyncLegend />
 
       <div className="px-3 py-2 border-t border-merkaba-border">
         <p className="text-[10px] text-merkaba-muted mb-2 truncate">
@@ -528,7 +577,7 @@ export function FileTree() {
             placement="top"
           />
           <button
-            onClick={() => createNewFolder()}
+            onClick={() => openNewFolderDialog()}
             className="btn-secondary flex-1"
           >
             <IconPlus className="w-3.5 h-3.5" />
@@ -536,6 +585,13 @@ export function FileTree() {
           </button>
         </div>
       </div>
+
+      {newFolderDialogParent && (
+        <FolderCreateDialog
+          parentPath={newFolderDialogParent}
+          onClose={closeNewFolderDialog}
+        />
+      )}
     </div>
   );
 }

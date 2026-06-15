@@ -82,4 +82,5 @@ contextBridge.exposeInMainWorld('merkaba', {
   restoreSession: () => ipcRenderer.invoke('session:restore'),
   syncPull: () => ipcRenderer.invoke('sync:pull'),
   getSyncStatus: () => ipcRenderer.invoke('sync:status'),
+  getFileSyncStatuses: () => ipcRenderer.invoke('sync:fileStatuses'),
 });

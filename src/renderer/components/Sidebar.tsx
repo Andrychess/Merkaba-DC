@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { findNoteInTree } from '../utils/note-tree';
+import { SIDEBAR_RAIL_WIDTH } from '../utils/sidebar-layout';
 import { NoteTypeIcon } from './NoteTypeIcon';
 import { FileTree } from './FileTree';
 import { ArchivePanel } from './ArchivePanel';
@@ -27,8 +29,10 @@ function noteTitle(path: string): string {
 export function Sidebar() {
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   const sidebarPanelOpen = useAppStore((s) => s.sidebarPanelOpen);
+  const sidebarPanelWidth = useAppStore((s) => s.sidebarPanelWidth);
   const setSidebarMode = useAppStore((s) => s.setSidebarMode);
   const setSidebarPanelOpen = useAppStore((s) => s.setSidebarPanelOpen);
+  const setSidebarPanelWidth = useAppStore((s) => s.setSidebarPanelWidth);
   const bumpStickers = useAppStore((s) => s.bumpStickers);
   const pinnedNotes = useAppStore((s) => s.pinnedNotes);
   const activeFile = useAppStore((s) => s.activeFile);
@@ -39,12 +43,15 @@ export function Sidebar() {
   const archiveTree = useAppStore((s) => s.archiveTree);
   const openFiles = useAppStore((s) => s.openFiles);
 
+  const [resizing, setResizing] = useState(false);
+  const resizeState = useRef({ startX: 0, startWidth: sidebarPanelWidth });
+
   const createSticker = async () => {
     await window.merkaba.createSticker();
     bumpStickers();
   };
 
-  const handleModeClick = (modeId: typeof modes[number]['id']) => {
+  const handleModeClick = (modeId: (typeof modes)[number]['id']) => {
     if (modeId === 'graph') {
       setSidebarMode('graph');
       return;
@@ -58,14 +65,50 @@ export function Sidebar() {
     if (modeId === 'archive') refreshArchiveTree();
   };
 
+  const handleResizeStart = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!sidebarPanelOpen) return;
+    e.preventDefault();
+    resizeState.current = { startX: e.clientX, startWidth: sidebarPanelWidth };
+    setResizing(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizing) return;
+    const dx = e.clientX - resizeState.current.startX;
+    setSidebarPanelWidth(resizeState.current.startWidth + dx);
+  };
+
+  const handleResizeEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizing) return;
+    setResizing(false);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  useEffect(() => {
+    if (!resizing) return;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [resizing]);
+
   const currentMode = modes.find((m) => m.id === sidebarMode);
   const ModeIcon = currentMode?.icon ?? IconFolder;
+  const asideWidth = sidebarPanelOpen
+    ? SIDEBAR_RAIL_WIDTH + sidebarPanelWidth
+    : SIDEBAR_RAIL_WIDTH;
 
   return (
     <aside
-      className={`relative flex shrink-0 border-r border-merkaba-border bg-merkaba-sidebar transition-[width] duration-200 ${
-        sidebarPanelOpen ? 'w-[300px]' : 'w-14'
+      className={`relative flex shrink-0 border-r border-merkaba-border bg-merkaba-sidebar app-no-drag ${
+        resizing ? '' : 'transition-[width] duration-200'
       }`}
+      style={{ width: asideWidth }}
     >
       <div
         className="w-14 flex flex-col border-r border-merkaba-border bg-merkaba-bg/50 shrink-0"
@@ -168,9 +211,12 @@ export function Sidebar() {
       </div>
 
       <div
-        className={`flex flex-col min-w-0 overflow-hidden transition-all duration-200 ${
+        className={`flex flex-col min-w-0 overflow-hidden ${
+          resizing ? '' : 'transition-all duration-200'
+        } ${
           sidebarPanelOpen ? 'flex-1 opacity-100' : 'w-0 flex-none opacity-0 pointer-events-none'
         }`}
+        style={sidebarPanelOpen ? { width: sidebarPanelWidth } : undefined}
       >
         <div className="panel-header border-b border-merkaba-border shrink-0">
           <ModeIcon className="w-3.5 h-3.5" />
@@ -185,7 +231,7 @@ export function Sidebar() {
           </button>
         </div>
 
-        <div className="flex-1 overflow-hidden min-w-[236px]">
+        <div className="flex-1 overflow-hidden min-w-0">
           {sidebarMode === 'files' && <FileTree />}
           {sidebarMode === 'board' && (
             <div className="flex flex-col h-full p-4">
@@ -201,6 +247,22 @@ export function Sidebar() {
           {sidebarMode === 'archive' && <ArchivePanel />}
         </div>
       </div>
+
+      {sidebarPanelOpen && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Изменить ширину панели"
+          title="Потяните, чтобы изменить ширину"
+          className={`absolute top-0 right-0 z-20 h-full w-1.5 -mr-0.5 cursor-col-resize touch-none ${
+            resizing ? 'bg-merkaba-accent/40' : 'hover:bg-merkaba-accent/25'
+          }`}
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+        />
+      )}
     </aside>
   );
 }

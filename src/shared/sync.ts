@@ -1,8 +1,15 @@
+export type FileSyncStatus = 'synced' | 'pending';
+
+export type FileSyncStatusMap = Record<string, FileSyncStatus>;
+
 export interface SyncFileState {
   localMd5?: string;
   cloudMd5?: string;
   cloudModified?: string;
   lastSyncedAt?: string;
+  /** Кэш для быстрой проверки без перечитывания файла */
+  localMtimeMs?: number;
+  localSize?: number;
 }
 
 export interface SyncPendingUpload {

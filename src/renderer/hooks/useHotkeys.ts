@@ -19,7 +19,7 @@ export function useHotkeys() {
     openDocumentFind,
     setSidebarMode,
     createNewNote,
-    createNewFolder,
+    openNewFolderDialog,
     closeFile,
     activeFile,
   } = useAppStore();
@@ -32,7 +32,7 @@ export function useHotkeys() {
       },
       'control+shift+n': (e) => {
         e.preventDefault();
-        createNewFolder();
+        openNewFolderDialog();
       },
       'control+s': (e) => {
         e.preventDefault();
@@ -87,7 +87,7 @@ export function useHotkeys() {
     openDocumentFind,
     setSidebarMode,
     createNewNote,
-    createNewFolder,
+    openNewFolderDialog,
     closeFile,
     activeFile,
   ]);
