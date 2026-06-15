@@ -11,6 +11,10 @@ function formatLastSync(iso: string | null): string {
   return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
 export function StatusBar() {
   const statusMessage = useAppStore((s) => s.statusMessage);
   const syncPull = useAppStore((s) => s.syncPull);
@@ -48,18 +52,21 @@ export function StatusBar() {
   const active = openFiles.find((f) => f.path === activeFile);
   const noteCount = countNotes();
   const hasPending = Boolean(syncStatus.pendingCount && syncStatus.pendingCount > 0);
+  const hasFailed = Boolean(syncStatus.failedCount && syncStatus.failedCount > 0);
 
   const syncLabel = syncStatus.syncing
     ? `${syncStatus.progress ?? 0}% — ${syncStatus.progressLabel ?? 'Синхронизация...'}`
     : syncStatus.error
-      ? 'Ошибка sync'
-      : hasPending
-        ? `${syncStatus.pendingCount} в очереди`
-        : formatLastSync(syncStatus.lastSync);
+      ? truncate(syncStatus.error, 48)
+      : hasFailed
+        ? `ошибок: ${syncStatus.failedCount}`
+        : hasPending
+          ? `${syncStatus.pendingCount} в очереди`
+          : formatLastSync(syncStatus.lastSync);
 
   const syncDotClass = syncStatus.syncing
     ? 'bg-amber-400 animate-pulse'
-    : syncStatus.error
+    : syncStatus.error || hasFailed
       ? 'bg-red-400'
       : hasPending
         ? 'bg-amber-400'
@@ -84,7 +91,7 @@ export function StatusBar() {
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${syncDotClass}`} />
         <span
           className={`truncate ${
-            syncStatus.error ? 'text-red-400' : hasPending ? 'text-amber-400' : undefined
+            syncStatus.error || hasFailed ? 'text-red-400' : hasPending ? 'text-amber-400' : undefined
           }`}
         >
           {syncLabel}

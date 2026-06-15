@@ -25,11 +25,23 @@ function fileLabel(
   return node?.title || node?.name || path.split('/').pop()?.replace(/\.md$/i, '') || path;
 }
 
+function statusForPath(
+  path: string,
+  synced: string[],
+  pending: string[],
+  failed: string[]
+): FileSyncStatus {
+  if (failed.includes(path)) return 'failed';
+  if (pending.includes(path)) return 'pending';
+  return 'synced';
+}
+
 export function SyncFilesDialog({ onClose }: SyncFilesDialogProps) {
   const fileTree = useAppStore((s) => s.fileTree);
   const archiveTree = useAppStore((s) => s.archiveTree);
   const openFiles = useAppStore((s) => s.openFiles);
   const openFile = useAppStore((s) => s.openFile);
+  const retryFailedSync = useAppStore((s) => s.retryFailedSync);
   const setSidebarMode = useAppStore((s) => s.setSidebarMode);
   const setSidebarPanelOpen = useAppStore((s) => s.setSidebarPanelOpen);
   const { statuses, refresh } = useFileSyncStatuses();
@@ -40,16 +52,21 @@ export function SyncFilesDialog({ onClose }: SyncFilesDialogProps) {
     [openFiles]
   );
 
-  const { synced, pending } = useMemo(
+  const { synced, pending, failed } = useMemo(
     () => partitionFileSyncStatuses(statuses, dirtyPaths),
     [statuses, dirtyPaths]
   );
 
+  useEffect(() => {
+    if (failed.length > 0) setFilter('failed');
+  }, [failed.length]);
+
   const visiblePaths = useMemo(() => {
     if (filter === 'synced') return synced;
     if (filter === 'pending') return pending;
-    return [...synced, ...pending].sort((a, b) => a.localeCompare(b, 'ru'));
-  }, [filter, synced, pending]);
+    if (filter === 'failed') return failed;
+    return [...synced, ...pending, ...failed].sort((a, b) => a.localeCompare(b, 'ru'));
+  }, [filter, synced, pending, failed]);
 
   useEffect(() => {
     refresh();
@@ -87,6 +104,7 @@ export function SyncFilesDialog({ onClose }: SyncFilesDialogProps) {
           <span className="flex items-center gap-1">
             <SyncFileBadge status="synced" />
             <SyncFileBadge status="pending" />
+            <SyncFileBadge status="failed" />
           </span>
         )}
         <span className="font-mono tabular-nums">{count}</span>
@@ -114,18 +132,31 @@ export function SyncFilesDialog({ onClose }: SyncFilesDialogProps) {
           </button>
         </div>
 
-        <div className="flex items-center gap-1 px-4 py-2 border-b border-merkaba-border shrink-0">
+        <div className="flex items-center gap-1 px-4 py-2 border-b border-merkaba-border shrink-0 flex-wrap">
           {filterBtn('synced', synced.length)}
           {filterBtn('pending', pending.length)}
-          {filterBtn('all', synced.length + pending.length)}
+          {filterBtn('failed', failed.length)}
+          {filterBtn('all', synced.length + pending.length + failed.length)}
         </div>
+
+        {failed.length > 0 && (
+          <div className="px-4 py-2 border-b border-merkaba-border shrink-0">
+            <button
+              type="button"
+              onClick={() => void retryFailedSync()}
+              className="btn-secondary w-full !text-xs"
+            >
+              Повторить ошибочные ({failed.length})
+            </button>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto min-h-0 p-2">
           {visiblePaths.length === 0 && (
             <p className="text-sm text-merkaba-muted text-center py-10 px-4">Список пуст</p>
           )}
           {visiblePaths.map((path) => {
-            const status: FileSyncStatus = synced.includes(path) ? 'synced' : 'pending';
+            const status = statusForPath(path, synced, pending, failed);
             return (
               <button
                 key={path}

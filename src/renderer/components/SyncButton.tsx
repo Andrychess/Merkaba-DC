@@ -32,6 +32,7 @@ export function SyncButton() {
   const syncing = syncStatus.syncing;
   const progress = syncStatus.progress ?? 0;
   const hasPending = Boolean(syncStatus.pendingCount && syncStatus.pendingCount > 0);
+  const hasFailed = Boolean(syncStatus.failedCount && syncStatus.failedCount > 0);
 
   const handleClick = async () => {
     if (syncing) return;
@@ -41,13 +42,17 @@ export function SyncButton() {
 
   const actionLabel = syncing
     ? null
-    : hasPending
-      ? `Синхронизировать (${syncStatus.pendingCount})`
-      : 'Синхронизировать';
+    : syncStatus.error
+      ? 'Ошибка sync'
+      : hasFailed
+        ? `Ошибки (${syncStatus.failedCount})`
+        : hasPending
+          ? `Синхронизировать (${syncStatus.pendingCount})`
+          : 'Синхронизировать';
 
   const cloudClass = syncing
     ? 'text-amber-400 animate-pulse'
-    : syncStatus.error
+    : syncStatus.error || hasFailed
       ? 'text-red-400'
       : hasPending
         ? 'text-amber-400'
@@ -89,7 +94,7 @@ export function SyncButton() {
           <span className="font-mono shrink-0 text-merkaba-text/90">{progress}%</span>
         </>
       ) : (
-        <span className={`shrink-0 ${syncStatus.error ? 'text-red-400' : undefined}`}>
+        <span className={`shrink-0 truncate max-w-[10rem] ${syncStatus.error || hasFailed ? 'text-red-400' : undefined}`}>
           {actionLabel}
         </span>
       )}

@@ -27,7 +27,7 @@ import {
   validateClientId,
   saveManualToken,
 } from './yandex-oauth';
-import { clearAuth as clearYandexAuth } from './auth-store';
+import { clearAuth as clearYandexAuth, initVaultPath } from './auth-store';
 import { saveYandexCredentials, getCredentialsInfo } from './yandex-config';
 import type { Config } from '../shared/types';
 import type { AuthStatus, SyncStatus, VaultInitResult } from '../shared/yandex';
@@ -115,6 +115,7 @@ function applyAutoSyncPolicy(config: Config): void {
 }
 
 async function initVaultLocalFirst(): Promise<VaultInitResult> {
+  await initVaultPath();
   syncEngine = new SyncEngine(sendStatus);
   const { isNew } = await syncEngine.initializeLocal();
 
@@ -218,6 +219,14 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     });
     await rebuildSearchNow();
     notifyFsChanged();
+  });
+
+  ipcMain.handle('sync:retryFailed', async (_, paths?: string[]) => {
+    const count = await getSync().retryFailed(paths);
+    if (count > 0) {
+      await getSync().syncAll();
+    }
+    return count;
   });
 
   ipcMain.handle('vault:initCloud', async (): Promise<VaultInitResult> => {

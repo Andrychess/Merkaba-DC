@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { folderEditInitialName, getFolderSymbol, sanitizeSpaceName } from '@shared/spaces';
+import { folderEditInitialName, sanitizeSpaceName } from '@shared/spaces';
 import { useAppStore } from '../stores/appStore';
 import { SpaceSymbolPicker } from './SpaceSymbolPicker';
 

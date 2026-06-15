@@ -118,6 +118,12 @@ export function SettingsDialog() {
                 ? 'Изменения отправляются в облако автоматически каждую минуту.'
                 : 'Синхронизация только вручную — кнопка в шапке или ниже.'}
             </p>
+            <p className="text-[11px] text-merkaba-muted/80 mb-3 leading-relaxed">
+              Вложения (картинки и файлы в attachments/) пока не синхронизируются — только заметки .md.
+            </p>
+            <p className="text-[11px] text-merkaba-muted/80 mb-3 leading-relaxed">
+              У каждого аккаунта Яндекса свой локальный vault; при выходе данные остаются на диске.
+            </p>
             <button onClick={() => syncPull()} className="btn-secondary !text-xs">
               Синхронизировать сейчас
             </button>

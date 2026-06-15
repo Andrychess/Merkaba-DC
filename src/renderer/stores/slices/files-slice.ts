@@ -52,7 +52,7 @@ export const createFilesSlice: AppSlice<Pick<
 
   refreshFileTree: async () => {
     try {
-      const fileTree = await window.merkaba.getFileTree();
+      const fileTree = await window.merkaba.getFileTree({ withMeta: false });
       const noteCount = countNotes(fileTree);
       const { activeSpace, selectedFolder } = get();
       const resolvedSpace = resolveActiveSpace(fileTree, activeSpace);

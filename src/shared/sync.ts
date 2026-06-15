@@ -1,6 +1,14 @@
-export type FileSyncStatus = 'synced' | 'pending';
+export type FileSyncStatus = 'synced' | 'pending' | 'failed';
 
 export type FileSyncStatusMap = Record<string, FileSyncStatus>;
+
+export interface SyncFailedOp {
+  op: 'upload' | 'delete';
+  path: string;
+  error: string;
+  retries: number;
+  at: string;
+}
 
 export interface SyncFileState {
   localMd5?: string;
@@ -31,6 +39,7 @@ export type SyncPendingOp = SyncPendingUpload | SyncPendingDelete;
 export interface SyncStateData {
   files: Record<string, SyncFileState>;
   pending: SyncPendingOp[];
+  failed?: SyncFailedOp[];
 }
 
 export const SYNC_STATE_PATH = '.merkaba/sync-state.json';

@@ -21,6 +21,7 @@ import {
 import { getLocalVaultPath } from './auth-store';
 import { mapPool } from './async-pool';
 import type { SyncStateData } from '../shared/sync';
+import { resolveSyncDirection } from '../shared/sync-resolve';
 
 const README_CONTENT = `# Merkaba
 
@@ -80,6 +81,7 @@ export class SyncEngine {
   private lastSync: string | null = null;
   private lastError: string | null = null;
   private pendingCount = 0;
+  private failedCount = 0;
   private syncTimer: ReturnType<typeof setInterval> | null = null;
   private onStatus?: (message: string) => void;
   private autoSyncEnabled: () => boolean = () => false;
@@ -90,6 +92,10 @@ export class SyncEngine {
     this.localRoot = getLocalVaultPath();
     this.stateStore = new SyncStateStore(this.localRoot);
     this.onStatus = onStatus;
+    void this.stateStore.load().then((state) => {
+      this.pendingCount = this.stateStore.pendingCount(state);
+      this.failedCount = this.stateStore.failedCount(state);
+    });
   }
 
   getStatus(): SyncStatus {
@@ -98,6 +104,7 @@ export class SyncEngine {
       lastSync: this.lastSync,
       error: this.lastError,
       pendingCount: this.pendingCount,
+      failedCount: this.failedCount,
       progress: this.syncing ? this.syncProgress : undefined,
       progressLabel: this.syncing ? this.syncProgressLabel : undefined,
     };
@@ -109,6 +116,9 @@ export class SyncEngine {
     const pending = new Set(
       state.pending.filter((p) => p.retries < MAX_PENDING_RETRIES).map((p) => p.path.replace(/\\/g, '/'))
     );
+    const failed = new Set(
+      (state.failed ?? []).map((f) => f.path.replace(/\\/g, '/'))
+    );
     for (const path of extraPendingPaths) {
       pending.add(path.replace(/\\/g, '/'));
     }
@@ -117,6 +127,10 @@ export class SyncEngine {
     const result: FileSyncStatusMap = {};
 
     for (const [rel, info] of localMap) {
+      if (failed.has(rel)) {
+        result[rel] = 'failed';
+        continue;
+      }
       if (pending.has(rel)) {
         result[rel] = 'pending';
         continue;
@@ -349,8 +363,11 @@ export class SyncEngine {
             this.stateStore.removeFileState(state, op.path);
             return { ok: true as const, op };
           }
-        } catch {
+        } catch (err) {
           this.stateStore.bumpRetry(state, op);
+          if (op.retries >= MAX_PENDING_RETRIES) {
+            this.stateStore.markFailed(state, op, String(err));
+          }
         }
         return { ok: false as const, op };
       },
@@ -359,6 +376,19 @@ export class SyncEngine {
 
     state.pending = state.pending.filter((p) => p.retries < MAX_PENDING_RETRIES);
     this.pendingCount = this.stateStore.pendingCount(state);
+    this.failedCount = this.stateStore.failedCount(state);
+  }
+
+  /** Повторить неудачные операции из очереди */
+  async retryFailed(paths?: string[]): Promise<number> {
+    const state = await this.stateStore.load();
+    const count = this.stateStore.retryFailed(state, paths);
+    if (count > 0) {
+      await this.stateStore.save(state);
+      this.pendingCount = this.stateStore.pendingCount(state);
+      this.failedCount = this.stateStore.failedCount(state);
+    }
+    return count;
   }
 
   private async downloadFile(
@@ -438,30 +468,12 @@ export class SyncEngine {
     cloudFile: DiskResource,
     state: Awaited<ReturnType<SyncStateStore['load']>>
   ): 'skip' | 'download' | 'upload' | 'conflict' {
-    const prev = state.files[relative];
-    const cloudMd5 = cloudFile.md5;
-    const cloudTime = cloudFile.modified ? new Date(cloudFile.modified).getTime() : 0;
-
-    if (cloudMd5 && local.md5 === cloudMd5) return 'skip';
-    if (prev?.localMd5 && prev?.cloudMd5 && prev.localMd5 === local.md5 && prev.cloudMd5 === cloudMd5) {
-      return 'skip';
-    }
-
-    const localChanged = !prev?.localMd5 || prev.localMd5 !== local.md5;
-    const cloudChanged = !prev?.cloudMd5 || (cloudMd5 ? prev.cloudMd5 !== cloudMd5 : cloudTime > 0);
-
-    if (localChanged && cloudChanged) {
-      if (cloudTime > local.mtimeMs) return 'download';
-      if (local.mtimeMs > cloudTime) return 'upload';
-      return 'conflict';
-    }
-
-    if (cloudChanged && !localChanged) return 'download';
-    if (localChanged && !cloudChanged) return 'upload';
-
-    if (cloudTime > local.mtimeMs) return 'download';
-    if (local.mtimeMs > cloudTime) return 'upload';
-    return 'skip';
+    return resolveSyncDirection(
+      local,
+      cloudFile.md5,
+      cloudFile.modified,
+      state.files[relative]
+    );
   }
 
   /** Двусторонняя синхронизация через Яндекс.Диск */
@@ -597,12 +609,15 @@ export class SyncEngine {
 
     await this.stateStore.save(state);
     this.pendingCount = this.stateStore.pendingCount(state);
+    this.failedCount = this.stateStore.failedCount(state);
     this.lastSync = new Date().toISOString();
     this.lastError = null;
     this.status(
-      this.pendingCount > 0
-        ? `Синхронизировано, в очереди: ${this.pendingCount}`
-        : 'Синхронизировано с Яндекс.Диском'
+      this.failedCount > 0
+        ? `Синхронизировано, ошибок: ${this.failedCount}`
+        : this.pendingCount > 0
+          ? `Синхронизировано, в очереди: ${this.pendingCount}`
+          : 'Синхронизировано с Яндекс.Диском'
     );
   }
 

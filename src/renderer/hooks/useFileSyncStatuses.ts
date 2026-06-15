@@ -17,7 +17,8 @@ export function treeHasPendingSync(
   dirtyPaths: ReadonlySet<string>
 ): boolean {
   if (node.type === 'file') {
-    return resolveFileSyncStatus(node.path, statuses, dirtyPaths.has(node.path)) === 'pending';
+    const status = resolveFileSyncStatus(node.path, statuses, dirtyPaths.has(node.path));
+    return status === 'pending' || status === 'failed';
   }
   const children = node.children as typeof node[] | undefined;
   return children?.some((child) => treeHasPendingSync(child, statuses, dirtyPaths)) ?? false;
@@ -46,15 +47,17 @@ export function useFileSyncStatuses() {
 export function partitionFileSyncStatuses(
   statuses: FileSyncStatusMap,
   dirtyPaths: ReadonlySet<string>
-): { synced: string[]; pending: string[] } {
+): { synced: string[]; pending: string[]; failed: string[] } {
   const synced: string[] = [];
   const pending: string[] = [];
+  const failed: string[] = [];
 
   for (const path of Object.keys(statuses).sort((a, b) => a.localeCompare(b, 'ru'))) {
     const state = resolveFileSyncStatus(path, statuses, dirtyPaths.has(path));
     if (state === 'synced') synced.push(path);
     else if (state === 'pending') pending.push(path);
+    else if (state === 'failed') failed.push(path);
   }
 
-  return { synced, pending };
+  return { synced, pending, failed };
 }

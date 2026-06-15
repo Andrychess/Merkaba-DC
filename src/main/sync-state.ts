@@ -3,7 +3,7 @@ import path from 'path';
 import type { SyncStateData, SyncPendingOp } from '../shared/sync';
 import { SYNC_STATE_PATH } from '../shared/sync';
 
-const EMPTY_STATE: SyncStateData = { files: {}, pending: [] };
+const EMPTY_STATE: SyncStateData = { files: {}, pending: [], failed: [] };
 
 export class SyncStateStore {
   constructor(private localRoot: string) {}
@@ -19,9 +19,10 @@ export class SyncStateStore {
       return {
         files: parsed.files ?? {},
         pending: parsed.pending ?? [],
+        failed: parsed.failed ?? [],
       };
     } catch {
-      return { ...EMPTY_STATE, files: {}, pending: [] };
+      return { ...EMPTY_STATE, files: {}, pending: [], failed: [] };
     }
   }
 
@@ -81,6 +82,43 @@ export class SyncStateStore {
 
   pendingCount(state: SyncStateData): number {
     return state.pending.length;
+  }
+
+  failedCount(state: SyncStateData): number {
+    return state.failed?.length ?? 0;
+  }
+
+  markFailed(state: SyncStateData, op: SyncPendingOp, error: string): void {
+    const norm = op.path.replace(/\\/g, '/');
+    state.pending = state.pending.filter((p) => p !== op && p.path !== norm);
+    if (!state.failed) state.failed = [];
+    state.failed = state.failed.filter((f) => f.path !== norm);
+    state.failed.push({
+      op: op.op,
+      path: norm,
+      error,
+      retries: op.retries,
+      at: new Date().toISOString(),
+    });
+  }
+
+  retryFailed(state: SyncStateData, paths?: string[]): number {
+    if (!state.failed?.length) return 0;
+    const wanted = paths?.map((p) => p.replace(/\\/g, '/'));
+    const toRetry = wanted
+      ? state.failed.filter((f) => wanted.includes(f.path))
+      : [...state.failed];
+
+    for (const item of toRetry) {
+      state.failed = state.failed!.filter((f) => f.path !== item.path);
+      if (item.op === 'upload') {
+        this.enqueueUpload(state, item.path);
+      } else {
+        this.enqueueDelete(state, item.path);
+      }
+    }
+
+    return toRetry.length;
   }
 
   bumpRetry(state: SyncStateData, op: SyncPendingOp): void {

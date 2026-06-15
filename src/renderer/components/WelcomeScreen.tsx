@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { fetchVaultBootstrap, vaultStateFromBootstrap } from '../stores/vault-bootstrap';
 import { LogoIcon, IconCloud } from './Icons';
 import { WindowControls } from './WindowControls';
 import { SetupGuide } from './SetupGuide';
@@ -28,15 +27,12 @@ export function WelcomeScreen() {
   }, []);
 
   const finishLogin = async () => {
-    const result = await window.merkaba.initCloudVault();
-    const data = await fetchVaultBootstrap(result.rootPath);
-    const auth = await window.merkaba.getAuthStatus();
-    useAppStore.setState(
-      vaultStateFromBootstrap(
-        data,
-        auth.login ? `Загружено с устройства (${auth.login})` : 'Загружено с устройства'
-      )
-    );
+    setLoading(true);
+    try {
+      await useAppStore.getState().bootstrapAfterAuth();
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSaveCredentials = async () => {

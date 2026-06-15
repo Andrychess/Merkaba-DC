@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('merkaba', {
   initCloudVault: () => ipcRenderer.invoke('vault:initCloud'),
   restoreSession: () => ipcRenderer.invoke('session:restore'),
   syncPull: () => ipcRenderer.invoke('sync:pull'),
+  retryFailedSync: (paths?: string[]) => ipcRenderer.invoke('sync:retryFailed', paths),
   getSyncStatus: () => ipcRenderer.invoke('sync:status'),
   getFileSyncStatuses: () => ipcRenderer.invoke('sync:fileStatuses'),
 });

@@ -61,9 +61,11 @@ export interface AppState {
   closeNewFolderDialog: () => void;
 
   restoreSession: () => Promise<boolean>;
+  bootstrapAfterAuth: () => Promise<void>;
   confirmAuthCode: (code: string) => Promise<void>;
   saveManualToken: (token: string) => Promise<void>;
-  syncPull: () => Promise<void>;
+  syncPull: (options?: { initial?: boolean }) => Promise<void>;
+  retryFailedSync: (paths?: string[]) => Promise<void>;
   openFile: (filePath: string) => Promise<void>;
   closeFile: (filePath: string) => void;
   setActiveFile: (filePath: string) => void;

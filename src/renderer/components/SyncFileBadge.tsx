@@ -5,15 +5,19 @@ interface SyncFileBadgeProps {
   className?: string;
 }
 
+const STATUS_COLOR: Record<FileSyncStatus, string> = {
+  synced: '#34d399',
+  pending: '#fbbf24',
+  failed: '#f87171',
+};
+
 export function SyncFileBadge({ status, className = '' }: SyncFileBadgeProps) {
   if (!status) return null;
-
-  const synced = status === 'synced';
 
   return (
     <span
       className={`inline-block w-1.5 h-1.5 rounded-full shrink-0 ${className}`}
-      style={{ backgroundColor: synced ? '#34d399' : '#fbbf24' }}
+      style={{ backgroundColor: STATUS_COLOR[status] }}
       aria-hidden
     />
   );
@@ -27,6 +31,7 @@ export function SyncLegend() {
     >
       <SyncFileBadge status="synced" />
       <SyncFileBadge status="pending" />
+      <SyncFileBadge status="failed" />
     </div>
   );
 }

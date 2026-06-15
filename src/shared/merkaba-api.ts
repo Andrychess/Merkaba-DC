@@ -68,6 +68,7 @@ export interface MerkabaAPI {
   initCloudVault: () => Promise<VaultInitResult>;
   restoreSession: () => Promise<VaultInitResult | null>;
   syncPull: () => Promise<void>;
+  retryFailedSync: (paths?: string[]) => Promise<number>;
   getSyncStatus: () => Promise<SyncStatus>;
   getFileSyncStatuses: () => Promise<FileSyncStatusMap>;
 }
