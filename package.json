@@ -1,6 +1,6 @@
 {
   "name": "merkaba-desktop",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Личный блокнот с синхронизацией через Яндекс.Диск",
   "main": "out/main/index.js",
   "scripts": {
