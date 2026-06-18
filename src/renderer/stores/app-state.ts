@@ -3,7 +3,6 @@ import type {
   Config,
   ConflictFile,
   FileNode,
-  GraphData,
   NoteMeta,
   OpenFile,
   SearchResult,
@@ -17,7 +16,7 @@ export interface AppState {
   pinnedNotes: string[];
   openFiles: OpenFile[];
   activeFile: string | null;
-  sidebarMode: 'files' | 'board' | 'graph' | 'archive';
+  sidebarMode: 'files' | 'board' | 'tags' | 'archive';
   sidebarPanelOpen: boolean;
   sidebarPanelWidth: number;
   editorMode: 'source' | 'preview';
@@ -27,10 +26,11 @@ export interface AppState {
   editorBodyFocusToken: number;
   documentFindToken: number;
   documentFindMode: 'find' | 'replace';
-  graph: GraphData;
   conflicts: ConflictFile[];
   showConflicts: boolean;
   showSettings: boolean;
+  syncErrorMessage: string | null;
+  showSyncFilesDialog: boolean;
   config: Config;
   statusMessage: string;
   stickersRevision: number;
@@ -49,6 +49,10 @@ export interface AppState {
   setSearchQuery: (query: string) => void;
   setShowConflicts: (show: boolean) => void;
   setShowSettings: (show: boolean) => void;
+  showSyncError: (message: string) => void;
+  dismissSyncError: () => void;
+  openSyncFilesDialog: () => void;
+  closeSyncFilesDialog: () => void;
   setStatusMessage: (message: string) => void;
   bumpStickers: () => void;
   focusFileSearch: () => void;
@@ -70,16 +74,18 @@ export interface AppState {
   closeFile: (filePath: string) => void;
   setActiveFile: (filePath: string) => void;
   updateContent: (body: string) => void;
+  applyFileBody: (filePath: string, body: string) => void;
+  flushEditorToStore: () => void;
   updateNoteMeta: (patch: Partial<NoteMeta>) => void;
-  saveFile: () => Promise<void>;
-  refreshFileTree: () => Promise<void>;
-  refreshArchiveTree: () => Promise<void>;
+  saveFile: (filePath?: string) => Promise<void>;
+  refreshFileTree: (options?: { withMeta?: boolean }) => Promise<void>;
+  enrichFileTree: () => Promise<void>;
+  refreshArchiveTree: (options?: { withMeta?: boolean }) => Promise<void>;
   clearArchive: () => Promise<void>;
   loadPinnedNotes: () => Promise<void>;
   pinNote: (path: string) => Promise<void>;
   unpinNote: (path: string) => Promise<void>;
   search: (query: string) => Promise<void>;
-  loadGraph: () => Promise<void>;
   loadConflicts: () => Promise<void>;
   toggleCheckbox: (filePath: string, line: number) => Promise<void>;
   resolveConflict: (file: string, choice: 'main' | 'conflict') => Promise<void>;

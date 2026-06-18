@@ -5,10 +5,11 @@ import { SIDEBAR_RAIL_WIDTH } from '../utils/sidebar-layout';
 import { NoteTypeIcon } from './NoteTypeIcon';
 import { FileTree } from './FileTree';
 import { ArchivePanel } from './ArchivePanel';
+import { TagsPanel } from './TagsPanel';
 import {
   IconFolder,
   IconBoard,
-  IconGraph,
+  IconTag,
   IconArchive,
   IconPlus,
   IconPin,
@@ -18,7 +19,7 @@ import {
 const modes = [
   { id: 'files' as const, icon: IconFolder, label: 'Файлы' },
   { id: 'board' as const, icon: IconBoard, label: 'Стикеры' },
-  { id: 'graph' as const, icon: IconGraph, label: 'Граф' },
+  { id: 'tags' as const, icon: IconTag, label: 'Теги' },
   { id: 'archive' as const, icon: IconArchive, label: 'Архив' },
 ];
 
@@ -52,10 +53,6 @@ export function Sidebar() {
   };
 
   const handleModeClick = (modeId: (typeof modes)[number]['id']) => {
-    if (modeId === 'graph') {
-      setSidebarMode('graph');
-      return;
-    }
     if (sidebarMode === modeId && sidebarPanelOpen) {
       setSidebarPanelOpen(false);
       return;
@@ -99,16 +96,11 @@ export function Sidebar() {
 
   const currentMode = modes.find((m) => m.id === sidebarMode);
   const ModeIcon = currentMode?.icon ?? IconFolder;
-  const asideWidth = sidebarPanelOpen
-    ? SIDEBAR_RAIL_WIDTH + sidebarPanelWidth
-    : SIDEBAR_RAIL_WIDTH;
 
   return (
     <aside
-      className={`relative flex shrink-0 border-r border-merkaba-border bg-merkaba-sidebar app-no-drag ${
-        resizing ? '' : 'transition-[width] duration-200'
-      }`}
-      style={{ width: asideWidth }}
+      className="relative z-30 flex shrink-0 border-r border-merkaba-border bg-merkaba-sidebar app-no-drag"
+      style={{ width: SIDEBAR_RAIL_WIDTH }}
     >
       <div
         className="w-14 flex flex-col border-r border-merkaba-border bg-merkaba-bg/50 shrink-0"
@@ -120,7 +112,7 @@ export function Sidebar() {
             <button
               type="button"
               onClick={() => setSidebarPanelOpen(true)}
-              title="Развернуть панель"
+              title="Развернуть панель (Esc)"
               className="w-10 h-10 flex items-center justify-center rounded-xl bg-merkaba-elevated border border-merkaba-border text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors"
             >
               <IconChevron className="w-3.5 h-3.5" />
@@ -210,58 +202,67 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div
-        className={`flex flex-col min-w-0 overflow-hidden ${
-          resizing ? '' : 'transition-all duration-200'
-        } ${
-          sidebarPanelOpen ? 'flex-1 opacity-100' : 'w-0 flex-none opacity-0 pointer-events-none'
-        }`}
-        style={sidebarPanelOpen ? { width: sidebarPanelWidth } : undefined}
-      >
-        <div className="panel-header border-b border-merkaba-border shrink-0">
-          <ModeIcon className="w-3.5 h-3.5" />
-          <span className="flex-1 truncate">{currentMode?.label}</span>
+      {sidebarPanelOpen && (
+        <>
           <button
             type="button"
+            aria-label="Закрыть панель"
+            className="sidebar-panel-backdrop fixed top-11 bottom-8 right-0 z-40 bg-black/45 backdrop-blur-[1px] animate-fade-in"
+            style={{ left: SIDEBAR_RAIL_WIDTH }}
             onClick={() => setSidebarPanelOpen(false)}
-            title="Свернуть панель"
-            className="w-6 h-6 flex items-center justify-center rounded-md text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors shrink-0"
-          >
-            <IconChevron className="w-3.5 h-3.5 -rotate-180" />
-          </button>
-        </div>
+          />
 
-        <div className="flex-1 overflow-hidden min-w-0">
-          {sidebarMode === 'files' && <FileTree />}
-          {sidebarMode === 'board' && (
-            <div className="flex flex-col h-full p-4">
-              <p className="text-sm text-merkaba-muted leading-relaxed">
-                Стикеры — быстрые записи на пробковой доске. Можно привязать к заметке и открыть её с доски.
-              </p>
-              <button onClick={() => createSticker()} className="btn-primary w-full mt-4">
-                <IconPlus className="w-4 h-4" />
-                Новый стикер
+          <div
+            className={`sidebar-panel-flyout fixed top-11 bottom-8 z-50 flex flex-col min-w-0 overflow-hidden bg-merkaba-sidebar border-r border-merkaba-border-strong shadow-panel animate-fade-in ${
+              resizing ? '' : 'transition-[width] duration-200'
+            }`}
+            style={{ left: SIDEBAR_RAIL_WIDTH, width: sidebarPanelWidth }}
+          >
+            <div className="panel-header border-b border-merkaba-border shrink-0">
+              <ModeIcon className="w-3.5 h-3.5" />
+              <span className="flex-1 truncate">{currentMode?.label}</span>
+              <button
+                type="button"
+                onClick={() => setSidebarPanelOpen(false)}
+                title="Свернуть панель (Esc)"
+                className="w-6 h-6 flex items-center justify-center rounded-md text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover transition-colors shrink-0"
+              >
+                <IconChevron className="w-3.5 h-3.5 -rotate-180" />
               </button>
             </div>
-          )}
-          {sidebarMode === 'archive' && <ArchivePanel />}
-        </div>
-      </div>
 
-      {sidebarPanelOpen && (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Изменить ширину панели"
-          title="Потяните, чтобы изменить ширину"
-          className={`absolute top-0 right-0 z-20 h-full w-1.5 -mr-0.5 cursor-col-resize touch-none ${
-            resizing ? 'bg-merkaba-accent/40' : 'hover:bg-merkaba-accent/25'
-          }`}
-          onPointerDown={handleResizeStart}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeEnd}
-          onPointerCancel={handleResizeEnd}
-        />
+            <div className="flex-1 overflow-hidden min-w-0">
+              {sidebarMode === 'files' && <FileTree />}
+              {sidebarMode === 'board' && (
+                <div className="flex flex-col h-full p-4">
+                  <p className="text-sm text-merkaba-muted leading-relaxed">
+                    Стикеры — быстрые записи на пробковой доске. Можно привязать к заметке и открыть её с доски.
+                  </p>
+                  <button onClick={() => createSticker()} className="btn-primary w-full mt-4">
+                    <IconPlus className="w-4 h-4" />
+                    Новый стикер
+                  </button>
+                </div>
+              )}
+              {sidebarMode === 'archive' && <ArchivePanel />}
+              {sidebarMode === 'tags' && <TagsPanel />}
+            </div>
+
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Изменить ширину панели"
+              title="Потяните, чтобы изменить ширину"
+              className={`absolute top-0 right-0 z-20 h-full w-1.5 -mr-0.5 cursor-col-resize touch-none ${
+                resizing ? 'bg-merkaba-accent/40' : 'hover:bg-merkaba-accent/25'
+              }`}
+              onPointerDown={handleResizeStart}
+              onPointerMove={handleResizeMove}
+              onPointerUp={handleResizeEnd}
+              onPointerCancel={handleResizeEnd}
+            />
+          </div>
+        </>
       )}
     </aside>
   );

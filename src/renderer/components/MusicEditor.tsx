@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { MusicData, MusicRow, MusicRowKind } from '@shared/note-types';
 import {
   DEFAULT_MUSIC_CHORD_FONT,
@@ -17,6 +17,7 @@ interface MusicEditorProps {
   body: string;
   title: string | null;
   fontSize: number;
+  showRuledLines: boolean;
   onChange: (body: string) => void;
   onTitleChange: (title: string) => void;
 }
@@ -49,7 +50,7 @@ function findRowIndex(rows: MusicRow[], rowId: string | null): number {
   return rows.findIndex((row) => row.id === rowId);
 }
 
-export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: MusicEditorProps) {
+export function MusicEditor({ body, title, fontSize, showRuledLines, onChange, onTitleChange }: MusicEditorProps) {
   const [data, setData] = useState<MusicData>(() => parseMusicBody(body));
   const [dragSectionIndex, setDragSectionIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
@@ -66,7 +67,22 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
   const lyricSize = data.lyricFontSize ?? fontSize ?? DEFAULT_MUSIC_LYRIC_FONT;
   const chordSize = data.chordFontSize ?? DEFAULT_MUSIC_CHORD_FONT;
   const lineHeight = data.lineHeight ?? DEFAULT_MUSIC_LINE_HEIGHT;
-  const rowGap = Math.round(6 + lyricSize * (lineHeight - 1) * 0.65);
+  const chordsVisible = data.showChords ?? true;
+  const rowGap = showRuledLines ? 0 : Math.round(6 + lyricSize * (lineHeight - 1) * 0.65);
+  const ruledLyricHeight = lyricSize * lineHeight;
+  const ruledChordHeight = chordSize * lineHeight;
+  const ruledTitleHeight = Math.round(lyricSize * 1.35) * lineHeight;
+  const ruledCoupletHeight = chordsVisible ? ruledChordHeight + ruledLyricHeight : ruledLyricHeight;
+
+  const sheetStyle = showRuledLines
+    ? ({
+        gap: 0,
+        '--editor-font-size': `${lyricSize}px`,
+        '--music-ruled-line-height': `${ruledLyricHeight}px`,
+        '--music-couplet-height': `${ruledCoupletHeight}px`,
+        '--music-title-ruled-height': `${ruledTitleHeight}px`,
+      } as CSSProperties)
+    : ({ gap: `${rowGap}px` } as CSSProperties);
 
   latestDataRef.current = data;
 
@@ -286,6 +302,10 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
     syncOut({ ...data, lineHeight: value }, { debounceMs: SETTINGS_DEBOUNCE_MS });
   };
 
+  const toggleShowChords = () => {
+    syncOut({ ...data, showChords: !chordsVisible }, { immediate: true });
+  };
+
   const minRowIndex = rowKind(data.rows[0], 0) === 'title' ? 1 : 0;
 
   const moveRowTo = (from: number, to: number) => {
@@ -380,10 +400,21 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
             max={28}
             value={chordSize}
             onChange={(e) => setChordFontSize(Number(e.target.value))}
-            className="w-16 accent-merkaba-accent"
+            disabled={!chordsVisible}
+            className="w-16 accent-merkaba-accent disabled:opacity-40"
           />
           <span className="w-5 text-right tabular-nums text-merkaba-text">{chordSize}</span>
         </label>
+
+        <button
+          type="button"
+          onMouseDown={keepEditorFocus}
+          onClick={toggleShowChords}
+          className={`btn-ghost !text-xs !py-1.5 ${chordsVisible ? 'bg-merkaba-accent-soft text-merkaba-accent' : ''}`}
+          title={chordsVisible ? 'Скрыть строки аккордов' : 'Показать строки аккордов'}
+        >
+          {chordsVisible ? '♯ Скрыть аккорды' : '♯ Аккорды'}
+        </button>
 
         <label className="flex items-center gap-1.5 text-xs text-merkaba-muted" title="Межстрочный интервал">
           Интервал
@@ -423,14 +454,100 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
         </label>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-8 music-editor-scroll">
-        <div className="max-w-3xl mx-auto flex flex-col" style={{ gap: `${rowGap}px` }}>
+      <div
+        ref={scrollRef}
+        className={
+          showRuledLines
+            ? 'flex-1 overflow-y-auto notebook-page music-editor-scroll'
+            : 'flex-1 overflow-y-auto px-6 py-8 music-editor-scroll'
+        }
+      >
+        <div
+          className={
+            showRuledLines
+              ? 'notebook-sheet editor-ruled music-sheet max-w-3xl mx-auto flex flex-col'
+              : 'max-w-3xl mx-auto flex flex-col'
+          }
+          style={sheetStyle}
+        >
           {data.rows.map((row, index) => {
             const rowId = row.id ?? `row-${index}`;
             const kind = rowKind(row, index);
             const isTitle = kind === 'title';
             const isSection = kind === 'section';
-            const showChord = kind === 'line';
+            const isLine = kind === 'line';
+            const showChordField = isLine && chordsVisible;
+
+            const chordInput = showChordField ? (
+              <textarea
+                value={row.chord}
+                onChange={(e) => updateRow(index, { chord: e.target.value })}
+                onFocus={() => setActiveRow(rowId)}
+                rows={1}
+                placeholder="Am    F    C    G"
+                className="music-chord-line w-full bg-transparent border-0 outline-none resize-none overflow-hidden font-mono text-merkaba-accent py-0"
+                style={{
+                  fontSize: `${chordSize}px`,
+                  lineHeight: showRuledLines ? 1 : lineHeight,
+                }}
+                onInput={(e) => {
+                  const el = e.currentTarget;
+                  el.style.height = 'auto';
+                  el.style.height = `${el.scrollHeight}px`;
+                }}
+              />
+            ) : null;
+
+            const lyricInput = (
+              <textarea
+                ref={(el) => {
+                  if (el) lyricRefs.current.set(rowId, el);
+                  else lyricRefs.current.delete(rowId);
+                }}
+                value={row.lyric}
+                onChange={(e) => updateRow(index, { lyric: e.target.value })}
+                onFocus={() => setActiveRow(rowId)}
+                onKeyDown={(e) => handleLyricKeyDown(index, e)}
+                rows={showRuledLines ? 1 : Math.max(1, row.lyric.split('\n').length)}
+                placeholder={
+                  isTitle
+                    ? 'Название песни...'
+                    : isSection
+                      ? 'Куплет, припев, бридж...'
+                      : 'Строка текста...'
+                }
+                className={`w-full bg-transparent border-0 outline-none resize-none ${
+                  showRuledLines ? 'py-0' : ''
+                } ${
+                  isTitle
+                    ? 'font-bold text-merkaba-text'
+                    : isSection
+                      ? 'music-section-heading font-semibold uppercase tracking-widest text-merkaba-accent/80'
+                      : 'text-merkaba-text/90'
+                }`}
+                style={{
+                  fontSize: isTitle ? `${Math.round(lyricSize * 1.35)}px` : `${lyricSize}px`,
+                  lineHeight: showRuledLines ? 1 : lineHeight,
+                }}
+              />
+            );
+
+            const rowContent =
+              showRuledLines ? (
+                <div
+                  className={`music-ruled-line${
+                    isLine ? ' music-ruled-line--couplet' : ''
+                  }${isTitle ? ' music-ruled-line--title' : ''}${isSection ? ' music-ruled-line--section' : ''}`}
+                >
+                  {chordInput}
+                  {lyricInput}
+                </div>
+              ) : (
+                <>
+                  {chordInput}
+                  {lyricInput}
+                </>
+              );
 
             return (
               <div
@@ -439,7 +556,7 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
                 onDragLeave={() => setDropTargetIndex((prev) => (prev === index ? null : prev))}
                 onDrop={(e) => handleRowDrop(index, e)}
                 className={`group music-row relative ${
-                  isSection ? 'music-section-row pt-2' : ''
+                  isSection ? `music-section-row${showRuledLines ? ' music-section-row--ruled' : ' pt-2'}` : ''
                 } ${dropTargetIndex === index ? 'music-row-drop-target' : ''} ${
                   dragSectionIndex === index ? 'opacity-50' : ''
                 }`}
@@ -490,54 +607,7 @@ export function MusicEditor({ body, title, fontSize, onChange, onTitleChange }: 
                   </button>
                 )}
 
-                <div className={isSection ? 'pl-7 pr-6' : 'pl-5'}>
-                  {showChord && (
-                    <textarea
-                      value={row.chord}
-                      onChange={(e) => updateRow(index, { chord: e.target.value })}
-                      onFocus={() => setActiveRow(rowId)}
-                      rows={1}
-                      placeholder="Am    F    C    G"
-                      className="music-chord-line w-full bg-transparent border-0 outline-none resize-none overflow-hidden font-mono text-merkaba-accent py-0.5"
-                      style={{ fontSize: `${chordSize}px`, lineHeight }}
-                      onInput={(e) => {
-                        const el = e.currentTarget;
-                        el.style.height = 'auto';
-                        el.style.height = `${el.scrollHeight}px`;
-                      }}
-                    />
-                  )}
-
-                  <textarea
-                    ref={(el) => {
-                      if (el) lyricRefs.current.set(rowId, el);
-                      else lyricRefs.current.delete(rowId);
-                    }}
-                    value={row.lyric}
-                    onChange={(e) => updateRow(index, { lyric: e.target.value })}
-                    onFocus={() => setActiveRow(rowId)}
-                    onKeyDown={(e) => handleLyricKeyDown(index, e)}
-                    rows={Math.max(1, row.lyric.split('\n').length)}
-                    placeholder={
-                      isTitle
-                        ? 'Название песни...'
-                        : isSection
-                          ? 'Куплет, припев, бридж...'
-                          : 'Строка текста...'
-                    }
-                    className={`w-full bg-transparent border-0 outline-none resize-none ${
-                      isTitle
-                        ? 'font-bold text-merkaba-text'
-                        : isSection
-                          ? 'music-section-heading font-semibold uppercase tracking-widest text-merkaba-accent/80'
-                          : 'text-merkaba-text/90'
-                    }`}
-                    style={{
-                      fontSize: isTitle ? `${Math.round(lyricSize * 1.35)}px` : `${lyricSize}px`,
-                      lineHeight,
-                    }}
-                  />
-                </div>
+                <div className={isSection ? 'pl-7 pr-6' : 'pl-5'}>{rowContent}</div>
               </div>
             );
           })}

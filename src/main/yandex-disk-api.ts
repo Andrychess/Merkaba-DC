@@ -6,6 +6,18 @@ function isDiskNotFoundError(err: unknown): boolean {
   return msg.includes('404') && (msg.includes('DiskNotFoundError') || msg.includes('Resource not found'));
 }
 
+export { isDiskNotFoundError };
+
+function isDiskPathExistsError(err: unknown): boolean {
+  const msg = String(err);
+  return (
+    msg.includes('409') &&
+    (msg.includes('DiskPathPointsToExistentDirectoryError') ||
+      msg.includes('DiskResourceAlreadyExistsError') ||
+      msg.includes('уже существует'))
+  );
+}
+
 export class YandexDiskApi {
   private knownFolders = new Set<string>();
 
@@ -57,10 +69,15 @@ export class YandexDiskApi {
       this.knownFolders.add(cloudPath);
       return;
     }
-    await this.request(
-      `${YANDEX_DISK_API}/resources?path=${encodeURIComponent(cloudPath)}`,
-      { method: 'PUT' }
-    );
+    try {
+      await this.request(
+        `${YANDEX_DISK_API}/resources?path=${encodeURIComponent(cloudPath)}`,
+        { method: 'PUT' }
+      );
+    } catch (err) {
+      // Параллельные загрузки могут одновременно создавать одну папку
+      if (!isDiskPathExistsError(err)) throw err;
+    }
     this.knownFolders.add(cloudPath);
   }
 

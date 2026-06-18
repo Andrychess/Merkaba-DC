@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { FileSystem } from './file-system';
-import { YandexDiskApi } from './yandex-disk-api';
+import { YandexDiskApi, isDiskNotFoundError } from './yandex-disk-api';
 import { SyncStateStore } from './sync-state';
 import { YANDEX_CLOUD_ROOT, type SyncStatus } from '../shared/yandex';
 import type { DiskResource } from '../shared/yandex';
@@ -11,10 +11,9 @@ import {
   isYandexConflictPath,
   type FileSyncStatusMap,
 } from '../shared/sync';
+import type { SyncFailedOp } from '../shared/sync';
 import { ARCHIVE_FOLDER } from '../shared/archive';
 import {
-  DEFAULT_VAULT_SPACES,
-  SYSTEM_VAULT_FOLDERS,
   VAULT_INIT_MARKER,
   VAULT_LEGACY_MARKERS,
 } from '../shared/vault';
@@ -23,32 +22,6 @@ import { mapPool } from './async-pool';
 import type { SyncStateData } from '../shared/sync';
 import { resolveSyncDirection } from '../shared/sync-resolve';
 
-const README_CONTENT = `# Merkaba
-
-Личный блокнот с синхронизацией через Яндекс.Диск.
-`;
-
-const WELCOME_NOTE = `---
-title: Добро пожаловать в Merkaba
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-tags: [приветствие]
----
-
-# Добро пожаловать в Merkaba
-
-Это ваша первая заметка. Начните писать!
-
-## Возможности
-
-- Редактирование Markdown
-- Wiki-ссылки: [[README]]
-- Синхронизация с Яндекс.Диском
-- Поиск и граф связей
-`;
-
-const DEFAULT_SPACES = [...DEFAULT_VAULT_SPACES];
-const SYSTEM_FOLDERS = [...SYSTEM_VAULT_FOLDERS];
 const MAX_PENDING_RETRIES = 5;
 const SYNC_FILE_CONCURRENCY = 5;
 const LOCAL_META_CONCURRENCY = 8;
@@ -92,7 +65,9 @@ export class SyncEngine {
     this.localRoot = getLocalVaultPath();
     this.stateStore = new SyncStateStore(this.localRoot);
     this.onStatus = onStatus;
-    void this.stateStore.load().then((state) => {
+    void this.stateStore.load().then(async (state) => {
+      await this.sanitizeSyncQueue(state);
+      await this.stateStore.save(state);
       this.pendingCount = this.stateStore.pendingCount(state);
       this.failedCount = this.stateStore.failedCount(state);
     });
@@ -144,6 +119,11 @@ export class SyncEngine {
     }
 
     return result;
+  }
+
+  async getFailedOps(): Promise<SyncFailedOp[]> {
+    const state = await this.stateStore.load();
+    return state.failed ?? [];
   }
 
   reportProgress(progress: number, label: string): void {
@@ -224,8 +204,22 @@ export class SyncEngine {
       return;
     }
     const state = await this.stateStore.load();
-    this.stateStore.enqueueDelete(state, oldPath.replace(/\\/g, '/'));
-    this.stateStore.enqueueUpload(state, newPath.replace(/\\/g, '/'));
+    const fromNorm = oldPath.replace(/\\/g, '/');
+    const toNorm = newPath.replace(/\\/g, '/');
+    const toIsDir = await this.isLocalDirectory(toNorm);
+    const fromIsDir = await this.isLocalDirectory(fromNorm);
+
+    this.stateStore.enqueueDelete(state, fromNorm);
+
+    if (toIsDir) {
+      const files = await this.collectSyncableFilesUnder(toNorm);
+      for (const file of files) {
+        this.stateStore.enqueueUpload(state, file);
+      }
+    } else if (!fromIsDir && isSyncableRelativePath(toNorm)) {
+      this.stateStore.enqueueUpload(state, toNorm);
+    }
+
     await this.stateStore.save(state);
     this.pendingCount = this.stateStore.pendingCount(state);
     if (this.pendingCount > 0) {
@@ -241,14 +235,125 @@ export class SyncEngine {
   }
 
   async clearArchiveRemoteOrQueue(): Promise<void> {
-    if (this.autoSyncEnabled()) {
-      await this.clearArchiveRemote();
+    await this.clearArchiveRemote();
+  }
+
+  private purgeArchiveFromSyncState(state: Awaited<ReturnType<SyncStateStore['load']>>): void {
+    for (const key of Object.keys(state.files)) {
+      if (key === ARCHIVE_FOLDER || key.startsWith(`${ARCHIVE_FOLDER}/`)) {
+        this.stateStore.removeFileState(state, key);
+      }
     }
-    // в ручном режиме — при следующей синхронизации
+    state.pending = state.pending.filter(
+      (p) => p.path !== ARCHIVE_FOLDER && !p.path.startsWith(`${ARCHIVE_FOLDER}/`)
+    );
+  }
+
+  private async applyArchiveCloudClear(): Promise<void> {
+    await this.pushDeleteFolder(ARCHIVE_FOLDER);
+    await this.pushFolder(ARCHIVE_FOLDER);
+  }
+
+  private async queueArchiveCloudClear(state: Awaited<ReturnType<SyncStateStore['load']>>): Promise<void> {
+    this.stateStore.enqueueDelete(state, ARCHIVE_FOLDER);
+    await this.stateStore.save(state);
+    this.pendingCount = this.stateStore.pendingCount(state);
+    if (this.pendingCount > 0) {
+      this.status(`Ожидает синхронизации: ${this.pendingCount}`);
+    }
   }
 
   private status(msg: string): void {
     this.onStatus?.(msg);
+  }
+
+  private async isLocalDirectory(relativePath: string): Promise<boolean> {
+    try {
+      const stat = await fs.stat(path.join(this.localRoot, relativePath));
+      return stat.isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  private async collectSyncableFilesUnder(relativeDir: string): Promise<string[]> {
+    const paths: string[] = [];
+    await this.walkLocalPaths(relativeDir.replace(/\\/g, '/'), paths);
+    return paths;
+  }
+
+  /** Разворачивает upload папок в upload файлов; чистит битые записи */
+  private async sanitizeSyncQueue(state: SyncStateData): Promise<void> {
+    const newPending: SyncPendingOp[] = [];
+
+    for (const op of state.pending) {
+      if (op.op === 'delete') {
+        newPending.push(op);
+        continue;
+      }
+      const targets = await this.resolveUploadTargets(op.path);
+      if (targets.length === 0) continue;
+      const norm = op.path.replace(/\\/g, '/');
+      if (targets.length === 1 && targets[0] === norm) {
+        newPending.push(op);
+      } else {
+        for (const file of targets) {
+          newPending.push({
+            op: 'upload',
+            path: file,
+            retries: op.retries,
+            at: op.at,
+          });
+        }
+      }
+    }
+    state.pending = this.dedupePendingOps(newPending);
+
+    if (!state.failed?.length) return;
+
+    const remainingFailed: SyncFailedOp[] = [];
+    for (const item of state.failed) {
+      if (item.op === 'delete') {
+        remainingFailed.push(item);
+        continue;
+      }
+      const targets = await this.resolveUploadTargets(item.path);
+      if (targets.length === 0) continue;
+      for (const file of targets) {
+        this.stateStore.enqueueUpload(state, file);
+      }
+    }
+    state.failed = remainingFailed;
+    state.pending = this.dedupePendingOps(state.pending);
+  }
+
+  private dedupePendingOps(ops: SyncPendingOp[]): SyncPendingOp[] {
+    const seen = new Set<string>();
+    const result: SyncPendingOp[] = [];
+    for (const op of ops) {
+      const key = `${op.op}:${op.path}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(op);
+    }
+    return result;
+  }
+
+  private async resolveUploadTargets(relativePath: string): Promise<string[]> {
+    const norm = relativePath.replace(/\\/g, '/');
+    const full = path.join(this.localRoot, norm);
+    try {
+      const stat = await fs.stat(full);
+      if (stat.isDirectory()) {
+        return this.collectSyncableFilesUnder(norm);
+      }
+      if (stat.isFile() && isSyncableRelativePath(norm)) {
+        return [norm];
+      }
+    } catch {
+      return [];
+    }
+    return [];
   }
 
   private async readLocalMeta(
@@ -333,6 +438,7 @@ export class SyncEngine {
   }
 
   private async processPending(state: Awaited<ReturnType<SyncStateStore['load']>>): Promise<void> {
+    await this.sanitizeSyncQueue(state);
     const remaining = state.pending.filter((op) => op.retries < MAX_PENDING_RETRIES);
     if (remaining.length === 0) return;
 
@@ -342,6 +448,15 @@ export class SyncEngine {
         try {
           if (op.op === 'upload') {
             const localPath = path.join(this.localRoot, op.path);
+            const stat = await fs.stat(localPath);
+            if (stat.isDirectory()) {
+              this.stateStore.clearPendingForPath(state, op.path);
+              const files = await this.collectSyncableFilesUnder(op.path);
+              for (const file of files) {
+                this.stateStore.enqueueUpload(state, file);
+              }
+              return { ok: false as const, op };
+            }
             const content = await fs.readFile(localPath, 'utf-8');
             await this.api.uploadText(YandexDiskApi.toCloudPath(op.path), content);
             const meta = await this.readLocalMeta(op.path, state);
@@ -359,8 +474,15 @@ export class SyncEngine {
             return { ok: true as const, op };
           }
           if (op.op === 'delete') {
-            await this.pushDelete(op.path);
-            this.stateStore.removeFileState(state, op.path);
+            const norm = op.path.replace(/\\/g, '/');
+            if (norm === ARCHIVE_FOLDER) {
+              await this.applyArchiveCloudClear();
+              this.purgeArchiveFromSyncState(state);
+            } else {
+              await this.pushDelete(norm);
+              this.stateStore.removeFileState(state, norm);
+            }
+            this.stateStore.clearPendingForPath(state, op.path);
             return { ok: true as const, op };
           }
         } catch (err) {
@@ -382,12 +504,12 @@ export class SyncEngine {
   /** Повторить неудачные операции из очереди */
   async retryFailed(paths?: string[]): Promise<number> {
     const state = await this.stateStore.load();
+    await this.sanitizeSyncQueue(state);
     const count = this.stateStore.retryFailed(state, paths);
-    if (count > 0) {
-      await this.stateStore.save(state);
-      this.pendingCount = this.stateStore.pendingCount(state);
-      this.failedCount = this.stateStore.failedCount(state);
-    }
+    await this.sanitizeSyncQueue(state);
+    await this.stateStore.save(state);
+    this.pendingCount = this.stateStore.pendingCount(state);
+    this.failedCount = this.stateStore.failedCount(state);
     return count;
   }
 
@@ -396,7 +518,16 @@ export class SyncEngine {
     cloudFile: DiskResource,
     state: Awaited<ReturnType<SyncStateStore['load']>>
   ): Promise<void> {
-    const content = await this.api.downloadText(cloudFile.path);
+    let content: string;
+    try {
+      content = await this.api.downloadText(cloudFile.path);
+    } catch (err) {
+      if (isDiskNotFoundError(err)) {
+        this.stateStore.removeFileState(state, relative);
+        return;
+      }
+      throw err;
+    }
     const normalized = content.replace(/\r\n/g, '\n');
     const localPath = path.join(this.localRoot, relative);
     await fs.mkdir(path.dirname(localPath), { recursive: true });
@@ -500,6 +631,8 @@ export class SyncEngine {
   private async syncFilesCore(progressFrom: number): Promise<void> {
     this.api.resetFolderCache();
     const state = await this.stateStore.load();
+    await this.sanitizeSyncQueue(state);
+    await this.stateStore.save(state);
     const span = 92 - progressFrom;
 
     this.reportProgress(progressFrom + span * 0.02, 'Отправка очереди...');
@@ -567,7 +700,16 @@ export class SyncEngine {
             await this.uploadFile(item.relative, item.local, state);
             uploadedThisRun.add(item.relative);
           } else {
-            const cloudContent = await this.api.downloadText(item.cloudFile.path);
+            let cloudContent: string;
+            try {
+              cloudContent = await this.api.downloadText(item.cloudFile.path);
+            } catch (err) {
+              if (isDiskNotFoundError(err)) {
+                this.stateStore.removeFileState(state, item.relative);
+                return;
+              }
+              throw err;
+            }
             await this.createConflictCopy(item.relative, cloudContent, state);
             this.stateStore.markSynced(
               state,
@@ -687,22 +829,19 @@ export class SyncEngine {
 
   async clearArchiveRemote(): Promise<void> {
     const state = await this.stateStore.load();
-    for (const key of Object.keys(state.files)) {
-      if (key === ARCHIVE_FOLDER || key.startsWith(`${ARCHIVE_FOLDER}/`)) {
-        this.stateStore.removeFileState(state, key);
-      }
-    }
-    state.pending = state.pending.filter(
-      (p) => p.path !== ARCHIVE_FOLDER && !p.path.startsWith(`${ARCHIVE_FOLDER}/`)
-    );
+    this.purgeArchiveFromSyncState(state);
+    await this.stateStore.save(state);
 
     try {
-      await this.pushDeleteFolder(ARCHIVE_FOLDER);
-      await this.pushFolder(ARCHIVE_FOLDER);
-      await this.stateStore.save(state);
+      await this.applyArchiveCloudClear();
       this.lastSync = new Date().toISOString();
-    } catch (err) {
+      this.lastError = null;
+      this.pendingCount = this.stateStore.pendingCount(state);
+      this.failedCount = this.stateStore.failedCount(state);
       await this.stateStore.save(state);
+    } catch (err) {
+      const retryState = await this.stateStore.load();
+      await this.queueArchiveCloudClear(retryState);
       this.lastError = String(err);
       throw err;
     }
@@ -758,38 +897,16 @@ export class SyncEngine {
   }
 
   async ensureLocalStructure(): Promise<{ isNew: boolean }> {
+    const existed = await this.isVaultInitializedLocal();
     await fs.mkdir(this.localRoot, { recursive: true });
     await fs.mkdir(path.join(this.localRoot, '.merkaba'), { recursive: true });
-    for (const folder of SYSTEM_FOLDERS) {
-      await fs.mkdir(path.join(this.localRoot, folder), { recursive: true });
+
+    if (!existed) {
+      await this.markVaultInitializedLocal();
+      return { isNew: true };
     }
 
-    const initialized = await this.isVaultInitializedLocal();
-    let isNew = false;
-
-    if (!initialized) {
-      isNew = true;
-      for (const folder of DEFAULT_SPACES) {
-        await fs.mkdir(path.join(this.localRoot, folder), { recursive: true });
-      }
-
-      const readmePath = path.join(this.localRoot, 'README.md');
-      try {
-        await fs.access(readmePath);
-      } catch {
-        await fs.writeFile(readmePath, README_CONTENT, 'utf-8');
-      }
-
-      const welcomePath = path.join(this.localRoot, 'notes/dobro-pozhalovat.md');
-      try {
-        await fs.access(welcomePath);
-      } catch {
-        await fs.writeFile(welcomePath, WELCOME_NOTE, 'utf-8');
-      }
-    }
-
-    await this.markVaultInitializedLocal();
-    return { isNew };
+    return { isNew: false };
   }
 
   private async isVaultInitializedLocal(): Promise<boolean> {
@@ -814,18 +931,6 @@ export class SyncEngine {
     }
   }
 
-  private async isVaultInitializedCloud(): Promise<boolean> {
-    for (const rel of VAULT_LEGACY_MARKERS) {
-      if (await this.api.exists(`${YANDEX_CLOUD_ROOT}/${rel}`)) {
-        return true;
-      }
-    }
-    if (await this.api.exists(`${YANDEX_CLOUD_ROOT}/README.md`)) {
-      return true;
-    }
-    return false;
-  }
-
   private async markVaultInitializedCloud(): Promise<void> {
     const cloudMarker = `${YANDEX_CLOUD_ROOT}/${VAULT_INIT_MARKER}`;
     if (!(await this.api.exists(cloudMarker))) {
@@ -836,25 +941,6 @@ export class SyncEngine {
   async ensureCloudStructure(): Promise<void> {
     await this.api.createFolder(YANDEX_CLOUD_ROOT);
     await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/.merkaba`);
-
-    for (const folder of SYSTEM_FOLDERS) {
-      await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/${folder}`);
-    }
-
-    const initialized = await this.isVaultInitializedCloud();
-    if (!initialized) {
-      for (const folder of DEFAULT_SPACES) {
-        await this.api.createFolder(`${YANDEX_CLOUD_ROOT}/${folder}`);
-      }
-      if (!(await this.api.exists(`${YANDEX_CLOUD_ROOT}/README.md`))) {
-        await this.api.uploadText(`${YANDEX_CLOUD_ROOT}/README.md`, README_CONTENT);
-      }
-      const welcomeCloud = `${YANDEX_CLOUD_ROOT}/notes/dobro-pozhalovat.md`;
-      if (!(await this.api.exists(welcomeCloud))) {
-        await this.api.uploadText(welcomeCloud, WELCOME_NOTE);
-      }
-    }
-
     await this.markVaultInitializedCloud();
   }
 

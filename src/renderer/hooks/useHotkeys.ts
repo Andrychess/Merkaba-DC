@@ -18,6 +18,7 @@ export function useHotkeys() {
     focusFileSearch,
     openDocumentFind,
     setSidebarMode,
+    setSidebarPanelOpen,
     createNewNote,
     openNewFolderDialog,
     closeFile,
@@ -58,7 +59,8 @@ export function useHotkeys() {
       },
       'control+g': (e) => {
         e.preventDefault();
-        setSidebarMode('graph');
+        setSidebarMode('tags');
+        setSidebarPanelOpen(true);
       },
       'control+e': (e) => {
         e.preventDefault();
@@ -73,19 +75,44 @@ export function useHotkeys() {
     const onKeyDown = (e: KeyboardEvent) => {
       const combo = comboFromEvent(e);
       const typing = isTypingTarget(e.target);
-      // Сохранение — из любого поля; остальные глобальные — только вне ввода
-      if (typing && combo !== 'control+s') return;
+      // В режиме просмотра форматирование обрабатывает сам редактор
+      if (typing && combo !== 'control+s' && combo !== 'control+e') return;
       handlers[combo]?.(e);
     };
 
+    const onEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+
+      const state = useAppStore.getState();
+      if (
+        state.showSettings ||
+        state.showConflicts ||
+        state.showSyncFilesDialog ||
+        state.syncErrorMessage ||
+        state.newFolderDialogParent
+      ) {
+        return;
+      }
+
+      if (document.querySelector('[data-find-replace-bar]')) return;
+
+      e.preventDefault();
+      state.toggleSidebarPanel();
+    };
+
     window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    window.addEventListener('keydown', onEscape);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('keydown', onEscape);
+    };
   }, [
     saveFile,
     toggleEditorMode,
     focusFileSearch,
     openDocumentFind,
     setSidebarMode,
+    setSidebarPanelOpen,
     createNewNote,
     openNewFolderDialog,
     closeFile,

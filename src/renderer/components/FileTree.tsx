@@ -13,6 +13,7 @@ import { SpaceSwitcher } from './SpaceSwitcher';
 import { FolderEditDialog } from './FolderEditDialog';
 import { FolderCreateDialog } from './FolderCreateDialog';
 import { NoteCreateMenu } from './NoteCreateMenu';
+import { ContextMenu } from './ContextMenu';
 import { SyncFileBadge, SyncLegend } from './SyncFileBadge';
 import {
   resolveFileSyncStatus,
@@ -42,7 +43,7 @@ function FileTreeItem({
   dirtyPaths,
 }: FileTreeItemProps) {
   const [expanded, setExpanded] = useState(depth < 2);
-  const [showMenu, setShowMenu] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState(node.title || node.name);
   const openFileEntry = useAppStore((s) => s.openFiles.find((f) => f.path === node.path));
@@ -118,18 +119,18 @@ function FileTreeItem({
   const handleDeleteFolder = async () => {
     if (!confirm(`Удалить папку «${folderLabel}»? Содержимое переместится в архив.`)) return;
     await deleteFolder(node.path);
-    setShowMenu(false);
+    setContextMenu(null);
   };
 
   const handleArchiveFile = async () => {
     if (!confirm(`Переместить заметку «${displayTitle}» в архив?`)) return;
     await deleteFile(node.path);
-    setShowMenu(false);
+    setContextMenu(null);
   };
 
   const handleMoveToRoot = async () => {
     await moveItem(node.path, activeSpace);
-    setShowMenu(false);
+    setContextMenu(null);
   };
 
   const handlePinToggle = async () => {
@@ -138,13 +139,15 @@ function FileTreeItem({
     } else {
       await pinNote(node.path);
     }
-    setShowMenu(false);
+    setContextMenu(null);
   };
 
   const handleColorChange = async (colorId: string | null) => {
     await setNoteColor(node.path, colorId);
-    setShowMenu(false);
+    setContextMenu(null);
   };
+
+  const closeContextMenu = () => setContextMenu(null);
 
   const handleDragStart = (e: React.DragEvent) => {
     e.dataTransfer.setData(DRAG_PATH, node.path);
@@ -189,7 +192,10 @@ function FileTreeItem({
         }`}
         style={{ paddingLeft: node.type === 'folder' ? `${depth * 14 + 8}px` : `${depth * 14 + 4}px` }}
         onClick={handleClick}
-        onContextMenu={(e) => { e.preventDefault(); setShowMenu(true); }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setContextMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
         {(isActive || colorHex) && (
           <span
@@ -287,93 +293,117 @@ function FileTreeItem({
             </button>
           </>
         )}
-
-        {showMenu && (
-          <div
-            className="absolute right-0 top-full z-50 bg-merkaba-elevated border border-merkaba-border-strong rounded-xl shadow-panel py-1.5 min-w-[210px] animate-fade-in"
-            onMouseLeave={() => setShowMenu(false)}
-          >
-            {node.type === 'file' && (
-              <>
-                <NoteColorPicker
-                  value={node.color ?? null}
-                  onChange={handleColorChange}
-                />
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                  onClick={(e) => { e.stopPropagation(); setRenaming(true); setShowMenu(false); }}
-                >
-                  Переименовать
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                  onClick={(e) => { e.stopPropagation(); handlePinToggle(); }}
-                >
-                  {isPinned ? 'Открепить' : 'Закрепить'}
-                </button>
-                {canMoveToRoot && (
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                    onClick={(e) => { e.stopPropagation(); handleMoveToRoot(); }}
-                  >
-                    Переместить в корень
-                  </button>
-                )}
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
-                  onClick={(e) => { e.stopPropagation(); handleArchiveFile(); }}
-                >
-                  В архив
-                </button>
-              </>
-            )}
-            {node.type === 'folder' && (
-              <>
-                {canManageFolder && (
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowEditDialog(true);
-                      setShowMenu(false);
-                    }}
-                  >
-                    Переименовать
-                  </button>
-                )}
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                  onClick={(e) => { e.stopPropagation(); createNewNote(node.path); setShowMenu(false); }}
-                >
-                  Новая заметка
-                </button>
-                <button
-                  className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                  onClick={(e) => { e.stopPropagation(); openNewFolderDialog(node.path); setShowMenu(false); }}
-                >
-                  Новая подпапка
-                </button>
-                {canMoveToRoot && (
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-                    onClick={(e) => { e.stopPropagation(); handleMoveToRoot(); }}
-                  >
-                    Переместить в корень
-                  </button>
-                )}
-                {canManageFolder && (
-                  <button
-                    className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
-                    onClick={(e) => { e.stopPropagation(); void handleDeleteFolder(); }}
-                  >
-                    Удалить
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-        )}
       </div>
+
+      <ContextMenu
+        open={contextMenu !== null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        onClose={closeContextMenu}
+      >
+        {node.type === 'file' && (
+          <>
+            <NoteColorPicker value={node.color ?? null} onChange={handleColorChange} />
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                setRenaming(true);
+                closeContextMenu();
+              }}
+            >
+              Переименовать
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handlePinToggle();
+              }}
+            >
+              {isPinned ? 'Открепить' : 'Закрепить'}
+            </button>
+            {canMoveToRoot && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleMoveToRoot();
+                }}
+              >
+                Переместить в корень
+              </button>
+            )}
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleArchiveFile();
+              }}
+            >
+              В архив
+            </button>
+          </>
+        )}
+        {node.type === 'folder' && (
+          <>
+            {canManageFolder && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEditDialog(true);
+                  closeContextMenu();
+                }}
+              >
+                Переименовать
+              </button>
+            )}
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                createNewNote(node.path);
+                closeContextMenu();
+              }}
+            >
+              Новая заметка
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                openNewFolderDialog(node.path);
+                closeContextMenu();
+              }}
+            >
+              Новая подпапка
+            </button>
+            {canMoveToRoot && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleMoveToRoot();
+                }}
+              >
+                Переместить в корень
+              </button>
+            )}
+            {canManageFolder && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm text-red-400 transition-colors"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleDeleteFolder();
+                }}
+              >
+                Удалить
+              </button>
+            )}
+          </>
+        )}
+      </ContextMenu>
 
       {node.type === 'folder' && expanded && node.children?.map((child) => (
         <FileTreeItem

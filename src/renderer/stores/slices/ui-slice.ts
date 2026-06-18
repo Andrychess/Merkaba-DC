@@ -15,9 +15,10 @@ export const createUiSlice: AppSlice<Pick<
   | 'editorMode'
   | 'searchQuery'
   | 'searchResults'
-  | 'graph'
   | 'showConflicts'
   | 'showSettings'
+  | 'syncErrorMessage'
+  | 'showSyncFilesDialog'
   | 'config'
   | 'statusMessage'
   | 'stickersRevision'
@@ -38,6 +39,10 @@ export const createUiSlice: AppSlice<Pick<
   | 'setSearchQuery'
   | 'setShowConflicts'
   | 'setShowSettings'
+  | 'showSyncError'
+  | 'dismissSyncError'
+  | 'openSyncFilesDialog'
+  | 'closeSyncFilesDialog'
   | 'setStatusMessage'
   | 'bumpStickers'
   | 'focusFileSearch'
@@ -56,9 +61,10 @@ export const createUiSlice: AppSlice<Pick<
   editorMode: 'preview',
   searchQuery: '',
   searchResults: [],
-  graph: { nodes: [], edges: [] },
   showConflicts: false,
   showSettings: false,
+  syncErrorMessage: null as string | null,
+  showSyncFilesDialog: false,
   config: defaultConfig,
   statusMessage: '',
   stickersRevision: 0,
@@ -80,12 +86,21 @@ export const createUiSlice: AppSlice<Pick<
     persistSidebarPanelWidth(next);
     set({ sidebarPanelWidth: next });
   },
-  setEditorMode: (mode) => set({ editorMode: mode }),
-  toggleEditorMode: () =>
-    set((s) => ({ editorMode: s.editorMode === 'source' ? 'preview' : 'source' })),
+  setEditorMode: (mode) => {
+    get().flushEditorToStore();
+    set({ editorMode: mode });
+  },
+  toggleEditorMode: () => {
+    get().flushEditorToStore();
+    set((s) => ({ editorMode: s.editorMode === 'source' ? 'preview' : 'source' }));
+  },
   setSearchQuery: (query) => set({ searchQuery: query }),
   setShowConflicts: (show) => set({ showConflicts: show }),
   setShowSettings: (show) => set({ showSettings: show }),
+  showSyncError: (message) => set({ syncErrorMessage: message }),
+  dismissSyncError: () => set({ syncErrorMessage: null }),
+  openSyncFilesDialog: () => set({ showSyncFilesDialog: true }),
+  closeSyncFilesDialog: () => set({ showSyncFilesDialog: false }),
   setStatusMessage: (message) => set({ statusMessage: message }),
   bumpStickers: () => set((s) => ({ stickersRevision: s.stickersRevision + 1 })),
   focusFileSearch: () =>

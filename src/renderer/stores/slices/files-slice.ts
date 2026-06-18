@@ -27,13 +27,13 @@ export const createFilesSlice: AppSlice<Pick<
   | 'pinnedNotes'
   | 'conflicts'
   | 'refreshFileTree'
+  | 'enrichFileTree'
   | 'refreshArchiveTree'
   | 'clearArchive'
   | 'loadPinnedNotes'
   | 'pinNote'
   | 'unpinNote'
   | 'search'
-  | 'loadGraph'
   | 'loadConflicts'
   | 'resolveConflict'
   | 'createNewNote'
@@ -50,9 +50,10 @@ export const createFilesSlice: AppSlice<Pick<
   pinnedNotes: [],
   conflicts: [],
 
-  refreshFileTree: async () => {
+  refreshFileTree: async (options?: { withMeta?: boolean }) => {
     try {
-      const fileTree = await window.merkaba.getFileTree({ withMeta: false });
+      const withMeta = options?.withMeta ?? false;
+      const fileTree = await window.merkaba.getFileTree({ withMeta });
       const noteCount = countNotes(fileTree);
       const { activeSpace, selectedFolder } = get();
       const resolvedSpace = resolveActiveSpace(fileTree, activeSpace);
@@ -67,15 +68,20 @@ export const createFilesSlice: AppSlice<Pick<
       if (resolvedSpace !== activeSpace) {
         persistActiveSpace(resolvedSpace);
       }
-      await Promise.all([get().refreshArchiveTree(), get().loadPinnedNotes()]);
+      await Promise.all([get().refreshArchiveTree({ withMeta }), get().loadPinnedNotes()]);
     } catch (err) {
       set({ statusMessage: `Ошибка обновления: ${err}` });
     }
   },
 
-  refreshArchiveTree: async () => {
+  enrichFileTree: async () => {
+    await get().refreshFileTree({ withMeta: true });
+  },
+
+  refreshArchiveTree: async (options?: { withMeta?: boolean }) => {
     try {
-      const archiveTree = await window.merkaba.getArchiveTree();
+      const withMeta = options?.withMeta ?? true;
+      const archiveTree = await window.merkaba.getArchiveTree({ withMeta });
       set({ archiveTree });
     } catch {
       set({ archiveTree: [] });
@@ -94,7 +100,12 @@ export const createFilesSlice: AppSlice<Pick<
         }
       }
       await get().refreshArchiveTree();
-      set({ statusMessage: 'Архив очищен' });
+      try {
+        await get().syncPull();
+        set({ statusMessage: 'Архив очищен и синхронизирован' });
+      } catch {
+        set({ statusMessage: 'Архив очищен локально; синхронизация с Диском не завершена' });
+      }
     } catch (err) {
       set({ statusMessage: `Ошибка очистки архива: ${err}` });
     }
@@ -137,11 +148,6 @@ export const createFilesSlice: AppSlice<Pick<
     set({ searchResults: results });
   },
 
-  loadGraph: async () => {
-    const graph = await window.merkaba.getGraph();
-    set({ graph });
-  },
-
   loadConflicts: async () => {
     const conflicts = await window.merkaba.getConflicts();
     set({ conflicts, showConflicts: conflicts.length > 0 });
@@ -150,7 +156,7 @@ export const createFilesSlice: AppSlice<Pick<
   resolveConflict: async (file, choice) => {
     await window.merkaba.resolveConflict(file, choice);
     await get().loadConflicts();
-    await get().refreshFileTree();
+    await get().enrichFileTree();
     set({ statusMessage: 'Конфликт разрешён' });
   },
 
@@ -169,7 +175,7 @@ export const createFilesSlice: AppSlice<Pick<
         fileTree: insertFileIntoTree(s.fileTree, path, resolvedType, name, ''),
       }));
       await get().openFile(path);
-      void get().refreshFileTree();
+      void get().enrichFileTree();
       const labels = { text: 'Заметка', drawing: 'Рисунок', music: 'Песня' };
       set((s) => ({
         statusMessage: `${labels[noteType]} создана`,
@@ -206,7 +212,7 @@ export const createFilesSlice: AppSlice<Pick<
         selectedFolder: path,
         statusMessage: 'Папка создана',
       }));
-      void get().refreshFileTree();
+      void get().enrichFileTree();
       return path;
     } catch (err) {
       set({ statusMessage: `Ошибка создания папки: ${err}` });
@@ -233,7 +239,7 @@ export const createFilesSlice: AppSlice<Pick<
       set((s) => ({
         fileTree: insertFolderIntoTree(s.fileTree, id),
       }));
-      void get().refreshFileTree();
+      void get().enrichFileTree();
       if (symbol) {
         get().setSpaceSymbol(id, symbol);
       }
@@ -248,7 +254,7 @@ export const createFilesSlice: AppSlice<Pick<
     try {
       await window.merkaba.deleteFile(filePath);
       get().closeFile(filePath);
-      await get().refreshFileTree();
+      await get().enrichFileTree();
       set({ statusMessage: 'Перемещено в архив' });
     } catch (err) {
       set({ statusMessage: `Ошибка архивации: ${err}` });
@@ -262,7 +268,7 @@ export const createFilesSlice: AppSlice<Pick<
         get().closeFile(file);
       }
       const wasSpace = isSpaceId(folderPath);
-      await get().refreshFileTree();
+      await get().enrichFileTree();
       if (
         wasSpace ||
         get().selectedFolder === folderPath ||
@@ -293,7 +299,7 @@ export const createFilesSlice: AppSlice<Pick<
         })),
         activeFile: activeFile ? remapPath(activeFile, itemPath, newPath, isFolder) : null,
       });
-      await get().refreshFileTree();
+      await get().enrichFileTree();
       set({ statusMessage: 'Перемещено' });
     } catch (err) {
       set({ statusMessage: `Ошибка перемещения: ${err}` });
@@ -348,7 +354,7 @@ export const createFilesSlice: AppSlice<Pick<
         }),
         activeFile: activeFile === oldPath ? (newPath !== oldPath ? newPath : activeFile) : activeFile,
       });
-      await get().refreshFileTree();
+      await get().enrichFileTree();
       set({ statusMessage: 'Заметка переименована' });
     } catch (err) {
       set({ statusMessage: `Ошибка переименования: ${err}` });
@@ -403,7 +409,7 @@ export const createFilesSlice: AppSlice<Pick<
         persistActiveSpace(nextActiveSpace);
       }
 
-      await get().refreshFileTree();
+      await get().enrichFileTree();
       set({ statusMessage: wasSpace ? 'Пространство переименовано' : 'Папка переименована' });
     } catch (err) {
       set({ statusMessage: `Ошибка переименования: ${err}` });

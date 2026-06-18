@@ -2,7 +2,7 @@ export type NoteType = 'text' | 'drawing' | 'music';
 
 export const NOTE_TYPES: { id: NoteType; label: string; description: string }[] = [
   { id: 'text', label: 'Текст', description: 'Обычная заметка с Markdown' },
-  { id: 'drawing', label: 'Рисунок', description: 'Простой схематичный холст' },
+  { id: 'drawing', label: 'Рисунок', description: 'Холст формата А4 (210×297 мм)' },
   { id: 'music', label: 'Музыка', description: 'Текст песни с аккордами и прокруткой' },
 ];
 
@@ -62,6 +62,8 @@ export interface MusicData {
   lyricFontSize: number;
   chordFontSize: number;
   lineHeight: number;
+  /** Показывать строки аккордов в редакторе */
+  showChords: boolean;
   rows: MusicRow[];
 }
 
@@ -84,8 +86,40 @@ interface MusicDataV1 {
 const DRAWING_FENCE = /```drawing\s*\n([\s\S]*?)\n```/;
 const MUSIC_FENCE = /```music\s*\n([\s\S]*?)\n```/;
 
+/** Логический холст 96 dpi: 210×297 мм */
+export const DRAWING_A4_WIDTH = 794;
+export const DRAWING_A4_HEIGHT = 1123;
+export const DRAWING_A4_RATIO = DRAWING_A4_WIDTH / DRAWING_A4_HEIGHT;
+export const DRAWING_PAGE_BG = '#1a1c2e';
+
 export function emptyDrawing(): DrawingData {
-  return { version: 1, width: 1200, height: 800, strokes: [] };
+  return { version: 1, width: DRAWING_A4_WIDTH, height: DRAWING_A4_HEIGHT, strokes: [] };
+}
+
+/** Приводит сохранённый рисунок к листу А4, сохраняя пропорции штрихов. */
+export function normalizeDrawingData(data: DrawingData): DrawingData {
+  const width = data.width > 0 ? data.width : DRAWING_A4_WIDTH;
+  const height = data.height > 0 ? data.height : DRAWING_A4_HEIGHT;
+  if (width === DRAWING_A4_WIDTH && height === DRAWING_A4_HEIGHT) {
+    return { version: 1, width, height, strokes: data.strokes };
+  }
+
+  const scale = Math.min(DRAWING_A4_WIDTH / width, DRAWING_A4_HEIGHT / height);
+  const offsetX = (DRAWING_A4_WIDTH - width * scale) / 2;
+  const offsetY = (DRAWING_A4_HEIGHT - height * scale) / 2;
+
+  return {
+    version: 1,
+    width: DRAWING_A4_WIDTH,
+    height: DRAWING_A4_HEIGHT,
+    strokes: data.strokes.map((stroke) => ({
+      ...stroke,
+      points: stroke.points.map((point) => ({
+        x: point.x * scale + offsetX,
+        y: point.y * scale + offsetY,
+      })),
+    })),
+  };
 }
 
 export function newMusicRowId(): string {
@@ -111,6 +145,7 @@ export function emptyMusic(title?: string): MusicData {
     lyricFontSize: DEFAULT_MUSIC_LYRIC_FONT,
     chordFontSize: DEFAULT_MUSIC_CHORD_FONT,
     lineHeight: DEFAULT_MUSIC_LINE_HEIGHT,
+    showChords: true,
     rows: [createMusicRow('title', title ? `# ${title}` : '# ')],
   };
 }
@@ -179,6 +214,7 @@ function normalizeMusicData(
     lyricFontSize: parsed.lyricFontSize ?? DEFAULT_MUSIC_LYRIC_FONT,
     chordFontSize: parsed.chordFontSize ?? DEFAULT_MUSIC_CHORD_FONT,
     lineHeight: parsed.lineHeight ?? DEFAULT_MUSIC_LINE_HEIGHT,
+    showChords: parsed.showChords ?? true,
   };
 
   if (parsed.version === 3 && Array.isArray(parsed.rows)) {
@@ -216,7 +252,9 @@ export function parseDrawingBody(body: string): DrawingData {
   if (match) {
     try {
       const parsed = JSON.parse(match[1]) as DrawingData;
-      if (parsed.version === 1 && Array.isArray(parsed.strokes)) return parsed;
+      if (parsed.version === 1 && Array.isArray(parsed.strokes)) {
+        return normalizeDrawingData(parsed);
+      }
     } catch {
       // fall through
     }

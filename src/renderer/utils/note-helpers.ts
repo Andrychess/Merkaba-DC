@@ -10,6 +10,12 @@ export function getActiveOpenFile(
   return openFiles.find((f) => f.path === activeFile);
 }
 
+const LEGACY_TIMESTAMP_SUFFIX = /^(.+)-\d{10,}$/;
+
+function baseNameFromPath(filePath: string): string {
+  return filePath.split('/').pop()?.replace(/\.md$/i, '') ?? '';
+}
+
 export function resolveNotePathForTitle(
   title: string,
   currentPath: string,
@@ -19,7 +25,9 @@ export function resolveNotePathForTitle(
   if (!base) return null;
 
   const dir = currentPath.includes('/') ? currentPath.slice(0, currentPath.lastIndexOf('/')) : '';
-  const currentBase = currentPath.split('/').pop()?.replace(/\.md$/i, '') ?? '';
+  const currentBase = baseNameFromPath(currentPath);
+  const legacyMatch = currentBase.match(LEGACY_TIMESTAMP_SUFFIX);
+  const normalizedCurrentBase = legacyMatch ? legacyMatch[1] : currentBase;
 
   let candidate = base;
   let suffix = 2;
@@ -27,7 +35,12 @@ export function resolveNotePathForTitle(
     const newPath = dir ? `${dir}/${candidate}.md` : `${candidate}.md`;
     if (newPath === currentPath) return null;
     if (!existingPaths.has(newPath)) {
-      return candidate === currentBase ? null : newPath;
+      if (candidate === currentBase) return null;
+      if (!legacyMatch && candidate === normalizedCurrentBase) return null;
+      return newPath;
+    }
+    if (legacyMatch && candidate === base) {
+      return null;
     }
     candidate = `${base}-${suffix}`;
     suffix++;

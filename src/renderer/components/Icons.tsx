@@ -6,32 +6,20 @@ interface IconProps {
 }
 
 const LOGO = {
-  rose: '#CB5762',
-  gold: '#CBAE57',
+  rose: '#D96671',
+  gold: '#D6B555',
   bg: '#1B1B2C',
-  glowStart: '#7A93FF',
-  glowEnd: '#4C5CA2',
+  bgCenter: '#242436',
 } as const;
 
 const LOGO_MARK_VIEWBOX = '90 80 580 590';
 const LOGO_ICON_VIEWBOX = '0 0 747 747';
 
-function LogoCircles({ glowId }: { glowId?: string }) {
+function LogoCircles() {
   return (
     <>
-      {glowId && (
-        <ellipse
-          opacity="0.3"
-          cx="372.784"
-          cy="373.784"
-          rx="358.522"
-          ry="530.849"
-          transform="rotate(45 372.784 373.784)"
-          fill={`url(#${glowId})`}
-        />
-      )}
-      <circle cx="278.5" cy="468.5" r="188.5" fill={LOGO.rose} />
-      <circle cx="467" cy="280" r="191" fill={LOGO.gold} />
+      <circle cx="285" cy="465" r="195" fill={LOGO.rose} />
+      <circle cx="480" cy="275" r="145" fill={LOGO.gold} />
     </>
   );
 }
@@ -47,25 +35,18 @@ export function LogoMark({ className = 'w-5 h-5' }: IconProps) {
 
 /** Полная иконка с фоном — для welcome, загрузки, favicon */
 export function LogoIcon({ className = 'w-10 h-10' }: IconProps) {
-  const glowId = useId();
+  const bgId = useId();
 
   return (
     <svg className={className} viewBox={LOGO_ICON_VIEWBOX} fill="none" aria-hidden>
       <defs>
-        <radialGradient
-          id={glowId}
-          cx="0"
-          cy="0"
-          r="1"
-          gradientUnits="userSpaceOnUse"
-          gradientTransform="translate(372.784 373.784) rotate(90) scale(530.849 358.522)"
-        >
-          <stop offset="0%" stopColor={LOGO.glowStart} />
-          <stop offset="100%" stopColor={LOGO.glowEnd} stopOpacity="0" />
+        <radialGradient id={bgId} cx="50%" cy="42%" r="72%">
+          <stop offset="0%" stopColor={LOGO.bgCenter} />
+          <stop offset="100%" stopColor={LOGO.bg} />
         </radialGradient>
       </defs>
-      <rect width="747" height="747" rx="100" fill={LOGO.bg} />
-      <LogoCircles glowId={glowId} />
+      <rect width="747" height="747" rx="100" fill={`url(#${bgId})`} />
+      <LogoCircles />
     </svg>
   );
 }
@@ -166,13 +147,20 @@ export function IconBoard({ className = 'w-4 h-4' }: IconProps) {
   );
 }
 
-export function IconGraph({ className = 'w-4 h-4' }: IconProps) {
+export function IconTag({ className = 'w-4 h-4' }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <circle cx="6" cy="18" r="2" />
-      <circle cx="18" cy="6" r="2" />
-      <circle cx="18" cy="18" r="2" />
-      <path d="M8 17l8-9M8 17h8" />
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
+      <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function IconLink({ className = 'w-4 h-4' }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+      <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
     </svg>
   );
 }

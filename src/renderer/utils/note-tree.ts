@@ -177,3 +177,60 @@ export function remapPath(
   }
   return path;
 }
+
+export interface TaggedNote {
+  path: string;
+  title: string;
+  tags: string[];
+  color?: string | null;
+  noteType?: NoteType;
+}
+
+export interface TagEntry {
+  tag: string;
+  count: number;
+}
+
+export function collectTaggedNotes(tree: FileNode[]): TaggedNote[] {
+  const result: TaggedNote[] = [];
+
+  function walk(nodes: FileNode[]) {
+    for (const node of nodes) {
+      if (node.type === 'file') {
+        const tags = node.tags ?? [];
+        if (tags.length > 0) {
+          result.push({
+            path: node.path,
+            title: node.title ?? node.name,
+            tags,
+            color: node.color,
+            noteType: node.noteType,
+          });
+        }
+      }
+      if (node.children) walk(node.children);
+    }
+  }
+
+  walk(tree);
+  return result.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+}
+
+export function buildTagIndex(notes: TaggedNote[]): TagEntry[] {
+  const counts = new Map<string, number>();
+  for (const note of notes) {
+    for (const tag of note.tags) {
+      const key = tag.trim();
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'ru'));
+}
+
+export function filterNotesByTags(notes: TaggedNote[], selectedTags: string[]): TaggedNote[] {
+  if (selectedTags.length === 0) return [];
+  return notes.filter((note) => selectedTags.every((tag) => note.tags.includes(tag)));
+}

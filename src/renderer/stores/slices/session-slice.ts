@@ -1,24 +1,45 @@
 import type { AppSlice, AppState } from '../app-state';
 import { fetchVaultBootstrap, vaultStateFromBootstrap } from '../vault-bootstrap';
+import { formatSyncFailedMessage } from '@renderer/utils/sync-error-format';
+import { fetchSyncFailedOps } from '@renderer/utils/merkaba-sync';
+
+function showSyncFailure(set: (partial: Partial<AppState>) => void, message: string): void {
+  set({
+    statusMessage: `Ошибка синхронизации: ${message}`,
+    syncErrorMessage: message,
+  });
+}
+
+function clearSyncError(set: (partial: Partial<AppState>) => void): void {
+  set({ syncErrorMessage: null });
+}
 
 async function applySyncResult(
   set: (partial: Partial<AppState>) => void,
   get: () => AppState
 ): Promise<boolean> {
-  await get().refreshFileTree();
-  await get().refreshArchiveTree();
+  await get().enrichFileTree();
   await get().loadPinnedNotes();
   await get().loadConflicts();
 
   const status = await window.merkaba.getSyncStatus().catch(() => null);
   if (status?.error) {
-    set({ statusMessage: `Ошибка синхронизации: ${status.error}` });
+    showSyncFailure(set, status.error);
     return false;
   }
   if (status?.failedCount) {
-    set({ statusMessage: `Синхронизировано, ошибок: ${status.failedCount}` });
+    const failedOps = await fetchSyncFailedOps();
+    const msg =
+      failedOps.length > 0
+        ? formatSyncFailedMessage(failedOps)
+        : `Не удалось синхронизировать ${status.failedCount} файл(ов).`;
+    set({
+      statusMessage: `Синхронизировано, ошибок: ${status.failedCount}`,
+      syncErrorMessage: msg,
+    });
     return true;
   }
+  clearSyncError(set);
   if (status?.pendingCount) {
     set({ statusMessage: `Синхронизировано, в очереди: ${status.pendingCount}` });
     return true;
@@ -52,7 +73,7 @@ export const createSessionSlice: AppSlice<Pick<
           { showConflicts: false }
         )
       );
-      void get().syncPull({ initial: true });
+      await get().syncPull({ initial: true });
       return true;
     } catch {
       return false;
@@ -103,6 +124,7 @@ export const createSessionSlice: AppSlice<Pick<
   },
 
   syncPull: async (options?: { initial?: boolean }) => {
+    clearSyncError(set);
     if (options?.initial) {
       set({ statusMessage: 'Синхронизация с Яндекс.Диском...' });
     }
@@ -110,21 +132,17 @@ export const createSessionSlice: AppSlice<Pick<
       await window.merkaba.syncPull();
       await applySyncResult(set, get);
     } catch (err) {
-      set({ statusMessage: `Ошибка синхронизации: ${err}` });
+      showSyncFailure(set, String(err));
     }
   },
 
   retryFailedSync: async (paths?: string[]) => {
     set({ statusMessage: 'Повторная отправка...' });
     try {
-      const count = await window.merkaba.retryFailedSync(paths);
-      if (count > 0) {
-        await applySyncResult(set, get);
-      } else {
-        set({ statusMessage: 'Нет файлов с ошибкой' });
-      }
+      await window.merkaba.retryFailedSync(paths);
+      await applySyncResult(set, get);
     } catch (err) {
-      set({ statusMessage: `Ошибка синхронизации: ${err}` });
+      showSyncFailure(set, String(err));
     }
   },
 });

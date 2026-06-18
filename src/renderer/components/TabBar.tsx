@@ -45,10 +45,23 @@ export function TabBar() {
               active={isActive}
             />
             <span className="truncate max-w-[130px]">{name}</span>
-            {file.isDirty && (
+            {file.isDirty && file.saveState !== 'saving' && (
               <span className="w-1.5 h-1.5 rounded-full bg-merkaba-accent shrink-0" title="Не сохранено" />
             )}
-            {!file.isDirty && syncStatus && <SyncFileBadge status={syncStatus} />}
+            {file.saveState === 'saving' && (
+              <span
+                className="w-3 h-3 border border-merkaba-accent/30 border-t-merkaba-accent rounded-full animate-spin shrink-0"
+                title="Сохранение"
+              />
+            )}
+            {file.saveState === 'saved' && (
+              <span className="text-emerald-400 text-[10px] shrink-0" title="Сохранено">
+                ✓
+              </span>
+            )}
+            {!file.isDirty && file.saveState !== 'saving' && file.saveState !== 'saved' && syncStatus && (
+              <SyncFileBadge status={syncStatus} />
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();

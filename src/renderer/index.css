@@ -26,10 +26,9 @@
   --merkaba-border-strong: rgba(255, 255, 255, 0.14);
   --merkaba-shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.4);
   --merkaba-shadow-glow: 0 0 20px rgba(244, 63, 94, 0.15);
-  --merkaba-graph-link: rgba(255, 255, 255, 0.1);
-  --merkaba-graph-node-stroke: rgba(255, 255, 255, 0.2);
   --merkaba-scrollbar: rgba(255, 255, 255, 0.1);
   --merkaba-scrollbar-hover: rgba(255, 255, 255, 0.18);
+  --merkaba-ruled-line: color-mix(in srgb, var(--merkaba-muted) 28%, transparent);
 }
 
 * {
@@ -189,6 +188,48 @@ body {
   scroll-behavior: smooth;
 }
 
+.music-sheet.editor-ruled .music-ruled-line {
+  display: flex;
+  align-items: flex-end;
+  min-height: var(--music-ruled-line-height);
+  line-height: var(--music-ruled-line-height);
+  border-bottom: 1px solid var(--merkaba-ruled-line);
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.music-sheet.editor-ruled .music-ruled-line--couplet {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-end;
+  min-height: var(--music-couplet-height);
+  line-height: normal;
+}
+
+.music-sheet.editor-ruled .music-ruled-line--couplet .music-chord-line {
+  min-height: auto;
+  flex-shrink: 0;
+}
+
+.music-sheet.editor-ruled .music-ruled-line--title {
+  min-height: var(--music-title-ruled-height);
+  line-height: var(--music-title-ruled-height);
+}
+
+.music-sheet.editor-ruled .music-ruled-line--section .music-section-heading {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.music-sheet.editor-ruled .music-section-row--ruled {
+  margin-top: 0;
+}
+
+.music-sheet.editor-ruled .music-row textarea {
+  field-sizing: normal;
+}
+
 .writing-surface {
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   line-height: 1.7;
@@ -204,6 +245,268 @@ body {
 
 .writing-surface:focus {
   outline: none;
+}
+
+/* Разлиновка «как в блокноте» — построчные подчёркивания и поля листа */
+.editor-ruled {
+  --ruled-line-height: calc(var(--editor-font-size, 14px) * 2);
+  --notebook-margin-top: calc(var(--ruled-line-height) * 1.5);
+  --notebook-margin-bottom: calc(var(--ruled-line-height) * 1.5);
+  --notebook-margin-left: calc(var(--editor-font-size, 14px) * 3.5);
+  --notebook-margin-right: calc(var(--editor-font-size, 14px) * 2);
+  --notebook-field-line: color-mix(in srgb, #e05252 55%, var(--merkaba-muted) 20%);
+}
+
+.notebook-page {
+  padding: 20px 16px 32px;
+  background: color-mix(in srgb, var(--merkaba-bg) 92%, #000 8%);
+}
+
+.notebook-sheet {
+  max-width: 46rem;
+  margin: 0 auto;
+  min-height: 100%;
+  padding:
+    var(--notebook-margin-top)
+    var(--notebook-margin-right)
+    var(--notebook-margin-bottom)
+    var(--notebook-margin-left);
+  background: color-mix(in srgb, var(--merkaba-bg) 96%, var(--merkaba-text) 4%);
+  box-shadow:
+    0 1px 0 var(--merkaba-border),
+    0 8px 28px rgba(0, 0, 0, 0.18);
+  position: relative;
+  caret-color: var(--merkaba-accent);
+}
+
+.notebook-sheet::before {
+  content: '';
+  position: absolute;
+  top: var(--notebook-margin-top);
+  bottom: var(--notebook-margin-bottom);
+  left: calc(var(--notebook-margin-left) - 0.65rem);
+  width: 1px;
+  background: var(--notebook-field-line);
+  pointer-events: none;
+}
+
+.ruled-row {
+  min-height: var(--ruled-line-height);
+  line-height: var(--ruled-line-height);
+  margin: 0;
+  padding: 0;
+  border-bottom: 1px solid var(--merkaba-ruled-line);
+  color: var(--merkaba-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ruled-row--empty {
+  min-height: var(--ruled-line-height);
+}
+
+.ruled-row--heading h1,
+.ruled-row--heading h2,
+.ruled-row--heading h3,
+.ruled-row--heading h4,
+.ruled-row--heading h5,
+.ruled-row--heading h6 {
+  margin: 0;
+  padding: 0;
+  line-height: var(--ruled-line-height);
+  font-size: inherit;
+  font-weight: 700;
+  border: none;
+}
+
+.ruled-row a {
+  color: var(--merkaba-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ruled-row .wiki-link {
+  color: var(--merkaba-accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.source-editor-host.editor-ruled {
+  --ruled-line-height: calc(var(--editor-font-size, 14px) * 2);
+}
+
+.source-editor-host.editor-ruled .cm-content {
+  line-height: var(--ruled-line-height);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--ruled-line-height) - 1px),
+    var(--merkaba-ruled-line) calc(var(--ruled-line-height) - 1px),
+    var(--merkaba-ruled-line) var(--ruled-line-height)
+  );
+  background-size: 100% var(--ruled-line-height);
+  background-attachment: local;
+  background-origin: content-box;
+}
+
+.source-editor-host.editor-ruled .cm-line {
+  line-height: var(--ruled-line-height);
+}
+
+.source-editor-host.editor-ruled .cm-activeLine {
+  background-color: color-mix(in srgb, var(--merkaba-accent-soft) 65%, transparent) !important;
+}
+
+.tiptap-editor-host {
+  min-height: 100%;
+}
+
+.tiptap-sheet.markdown-preview {
+  @apply max-w-[46rem] mx-auto px-6 py-8;
+}
+
+.tiptap-sheet .tiptap {
+  min-height: 100%;
+}
+
+.tiptap-sheet.editor-ruled .tiptap {
+  line-height: var(--ruled-line-height);
+}
+
+.tiptap-sheet.editor-ruled .ProseMirror {
+  line-height: var(--ruled-line-height);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--ruled-line-height) - 1px),
+    var(--merkaba-ruled-line) calc(var(--ruled-line-height) - 1px),
+    var(--merkaba-ruled-line) var(--ruled-line-height)
+  );
+  background-size: 100% var(--ruled-line-height);
+  background-attachment: local;
+  background-origin: content-box;
+}
+
+.tiptap p {
+  @apply mb-1 leading-[1.85] text-merkaba-text/90;
+}
+
+.tiptap [style*='text-align: center'],
+.tiptap [data-text-align='center'] {
+  text-align: center;
+}
+
+.tiptap [style*='text-align: right'],
+.tiptap [data-text-align='right'] {
+  text-align: right;
+}
+
+.tiptap [style*='text-align: justify'],
+.tiptap [data-text-align='justify'] {
+  text-align: justify;
+}
+
+.tiptap [style*='text-align: left'],
+.tiptap [data-text-align='left'] {
+  text-align: left;
+}
+
+.tiptap p + p {
+  @apply mt-1 mb-1;
+}
+
+.tiptap h1 {
+  @apply text-3xl font-bold mb-4 mt-0 pb-3 border-b border-merkaba-border text-merkaba-text;
+}
+
+.tiptap h2 {
+  @apply text-xl font-semibold mb-3 mt-6 text-merkaba-text border-b border-merkaba-border pb-2;
+}
+
+.tiptap h3 {
+  @apply text-lg font-semibold mb-2 mt-4 text-merkaba-text;
+}
+
+.tiptap ul {
+  @apply list-disc pl-6 mb-3 space-y-1;
+}
+
+.tiptap ol {
+  @apply list-decimal pl-6 mb-3 space-y-1;
+}
+
+.tiptap ul[data-type='taskList'] {
+  @apply list-none pl-1 mb-3;
+}
+
+.tiptap li[data-type='taskItem'] {
+  @apply flex items-start gap-2 leading-7;
+}
+
+.tiptap li[data-type='taskItem'] > label {
+  @apply mt-1;
+}
+
+.tiptap li[data-type='taskItem'] > label input {
+  @apply accent-merkaba-accent w-4 h-4 cursor-pointer;
+}
+
+.tiptap blockquote {
+  @apply border-l-4 border-merkaba-accent pl-5 italic text-merkaba-muted my-4 py-1;
+}
+
+.tiptap code {
+  @apply bg-merkaba-elevated px-1.5 py-0.5 rounded-md text-sm font-mono text-merkaba-accent;
+}
+
+.tiptap pre {
+  @apply bg-merkaba-elevated p-5 rounded-xl overflow-x-auto mb-4 border border-merkaba-border;
+}
+
+.tiptap pre code {
+  @apply bg-transparent p-0 text-merkaba-text;
+}
+
+.tiptap a.tiptap-link,
+.tiptap .wiki-link {
+  @apply text-merkaba-accent hover:underline underline-offset-2;
+}
+
+.tiptap .wiki-link {
+  @apply cursor-pointer font-medium;
+}
+
+.tiptap-sheet.editor-ruled .tiptap p,
+.tiptap-sheet.editor-ruled .tiptap li,
+.tiptap-sheet.editor-ruled .tiptap blockquote,
+.tiptap-sheet.editor-ruled .tiptap h1,
+.tiptap-sheet.editor-ruled .tiptap h2,
+.tiptap-sheet.editor-ruled .tiptap h3 {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  line-height: var(--ruled-line-height) !important;
+  font-size: inherit !important;
+  border: none !important;
+  padding: 0 !important;
+  font-weight: inherit;
+}
+
+.tiptap-sheet.editor-ruled .tiptap h1,
+.tiptap-sheet.editor-ruled .tiptap h2,
+.tiptap-sheet.editor-ruled .tiptap h3 {
+  font-weight: 700 !important;
+}
+
+.sidebar-panel-flyout {
+  box-shadow: var(--merkaba-shadow-panel), 8px 0 32px rgba(0, 0, 0, 0.35);
+}
+
+.sidebar-panel-backdrop {
+  animation-duration: 150ms;
+}
+
+.sidebar-panel-flyout {
+  animation-duration: 180ms;
 }
 
 .cm-editor {

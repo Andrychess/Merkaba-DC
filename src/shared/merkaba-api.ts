@@ -2,13 +2,12 @@ import type {
   Config,
   ConflictFile,
   FileNode,
-  GraphData,
   SearchResult,
   Sticker,
   TreeScanOptions,
 } from './types';
 import type { AuthStatus, SyncStatus, VaultInitResult } from './yandex';
-import type { FileSyncStatusMap } from './sync';
+import type { FileSyncStatusMap, SyncFailedOp } from './sync';
 
 export interface MerkabaAPI {
   readFile: (path: string) => Promise<string>;
@@ -28,7 +27,6 @@ export interface MerkabaAPI {
   watchFolder: (callback: (event: string, path: string) => void) => () => void;
   search: (query: string) => Promise<SearchResult[]>;
   rebuildIndex: () => Promise<void>;
-  getGraph: () => Promise<GraphData>;
   getStickers: () => Promise<Sticker[]>;
   createSticker: (input?: {
     title?: string;
@@ -55,6 +53,7 @@ export interface MerkabaAPI {
   minimizeWindow: () => Promise<void>;
   maximizeWindow: () => Promise<void>;
   closeWindow: () => Promise<void>;
+  onPrepareShutdown: (callback: () => void | Promise<void>) => () => void;
   onStatus: (callback: (message: string) => void) => void;
   getAuthStatus: () => Promise<AuthStatus>;
   getCredentialsInfo: () => Promise<{ clientId: string; source: string } | null>;
@@ -71,6 +70,7 @@ export interface MerkabaAPI {
   retryFailedSync: (paths?: string[]) => Promise<number>;
   getSyncStatus: () => Promise<SyncStatus>;
   getFileSyncStatuses: () => Promise<FileSyncStatusMap>;
+  getSyncFailedOps: () => Promise<SyncFailedOp[]>;
 }
 
 declare global {

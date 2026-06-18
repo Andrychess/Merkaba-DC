@@ -61,7 +61,10 @@ export function FindReplaceBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-merkaba-elevated border-b border-merkaba-border shrink-0">
+    <div
+      data-find-replace-bar
+      className="flex flex-wrap items-center gap-2 px-3 py-2 bg-merkaba-elevated border-b border-merkaba-border shrink-0"
+    >
       <label className="flex items-center gap-1.5 text-xs text-merkaba-muted">
         <span className="w-14 shrink-0">Найти</span>
         <input
@@ -72,6 +75,7 @@ export function FindReplaceBar({
             e.stopPropagation();
             if (e.key === 'Escape') {
               e.preventDefault();
+              e.stopPropagation();
               onClose();
             } else if (e.key === 'Enter') {
               e.preventDefault();
@@ -93,6 +97,7 @@ export function FindReplaceBar({
               e.stopPropagation();
               if (e.key === 'Escape') {
                 e.preventDefault();
+                e.stopPropagation();
                 onClose();
               } else if (e.key === 'Enter') {
                 e.preventDefault();

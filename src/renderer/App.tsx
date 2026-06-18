@@ -5,12 +5,13 @@ import { Sidebar } from './components/Sidebar';
 import { TabBar } from './components/TabBar';
 import { Editor } from './components/Editor';
 import { StatusBar } from './components/StatusBar';
-import { GraphView } from './components/GraphView';
 import { CorkBoard } from './components/CorkBoard';
 import { ConflictDialog } from './components/ConflictDialog';
+import { SyncErrorDialog } from './components/SyncErrorDialog';
 import { SettingsDialog } from './components/SettingsDialog';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useAutoSave } from './hooks/useAutoSave';
+import { useAppShutdown } from './hooks/useAppShutdown';
 import { useTheme } from './hooks/useTheme';
 import { LogoMark, LogoIcon, IconSettings } from './components/Icons';
 import { SyncControls } from './components/SyncControls';
@@ -20,7 +21,7 @@ export default function App() {
   const initialized = useAppStore((s) => s.initialized);
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
-  const refreshFileTree = useAppStore((s) => s.refreshFileTree);
+  const enrichFileTree = useAppStore((s) => s.enrichFileTree);
   const loadConflicts = useAppStore((s) => s.loadConflicts);
   const restoreSession = useAppStore((s) => s.restoreSession);
   const setStatusMessage = useAppStore((s) => s.setStatusMessage);
@@ -29,6 +30,7 @@ export default function App() {
 
   useHotkeys();
   useAutoSave();
+  useAppShutdown();
   useTheme();
 
   useEffect(() => {
@@ -39,8 +41,8 @@ export default function App() {
   useEffect(() => {
     if (!initialized) return;
 
-    // Обогащаем дерево заголовками и превью в фоне (первый показ — быстрый скан)
-    void refreshFileTree();
+    // Быстрый скан уже в bootstrap — сразу подгружаем заголовки и превью
+    void enrichFileTree();
 
     let treeTimer: ReturnType<typeof setTimeout> | null = null;
     const TREE_REFRESH_MS = 400;
@@ -49,7 +51,7 @@ export default function App() {
       if (treeTimer) clearTimeout(treeTimer);
       treeTimer = setTimeout(() => {
         treeTimer = null;
-        void refreshFileTree();
+        void enrichFileTree();
         void loadConflicts();
       }, TREE_REFRESH_MS);
     };
@@ -65,13 +67,13 @@ export default function App() {
       if (treeTimer) clearTimeout(treeTimer);
       unwatch();
     };
-  }, [initialized, refreshFileTree, loadConflicts]);
+  }, [initialized, enrichFileTree, loadConflicts]);
 
   if (checking) {
     return (
       <div className="flex h-full items-center justify-center bg-merkaba-bg app-drag-region">
         <div className="flex flex-col items-center gap-4 animate-fade-in">
-          <LogoIcon className="w-14 h-14 shadow-glow" />
+          <LogoIcon className="w-14 h-14" />
           <div className="w-6 h-6 border-2 border-merkaba-accent/30 border-t-merkaba-accent rounded-full animate-spin" />
         </div>
       </div>
@@ -113,12 +115,10 @@ export default function App() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-        {sidebarMode !== 'graph' && <Sidebar />}
+        <Sidebar />
 
         <main className="flex-1 flex flex-col min-h-0 bg-merkaba-bg">
-          {sidebarMode === 'graph' ? (
-            <GraphView />
-          ) : sidebarMode === 'board' ? (
+          {sidebarMode === 'board' ? (
             <CorkBoard />
           ) : (
             <>
@@ -131,6 +131,7 @@ export default function App() {
 
       <StatusBar />
       <ConflictDialog />
+      <SyncErrorDialog />
       <SettingsDialog />
     </div>
   );

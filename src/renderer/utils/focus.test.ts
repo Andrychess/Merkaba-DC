@@ -19,6 +19,13 @@ describe('isFormControlElement', () => {
     const button = document.createElement('button');
     expect(isFormControlElement(button)).toBe(false);
   });
+
+  it('detects contenteditable elements', () => {
+    const editor = document.createElement('div');
+    editor.contentEditable = 'true';
+    expect(isFormControlElement(editor)).toBe(true);
+    expect(isTypingTarget(editor)).toBe(true);
+  });
 });
 
 describe('isTypingTarget', () => {

@@ -3,7 +3,8 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 /** Поле ввода, слайдер или другой интерактивный контрол формы. */
 export function isFormControlElement(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  if (target.matches('input, select, textarea, [contenteditable="true"]')) return true;
+  if (target.matches('input, select, textarea')) return true;
+  if (target.isContentEditable) return true;
   const label = target.closest('label');
   if (label?.querySelector('input, select, textarea')) return true;
   return false;

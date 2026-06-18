@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { flattenNotes, toWikiLinkTarget, findNoteColor } from '../utils/note-tree';
-import { IconGraph, IconSearch } from './Icons';
+import { IconLink, IconSearch } from './Icons';
 import { NoteColorDot } from './NoteColorPicker';
 
 interface WikiLinkPickerProps {
@@ -63,14 +63,14 @@ export function WikiLinkPicker({ activePath, content, onInsert }: WikiLinkPicker
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        title="Связать с заметкой (для графа)"
+        title="Связать с заметкой"
         className={`inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-xs transition-all duration-100 ${
           open
             ? 'bg-merkaba-accent-soft text-merkaba-accent'
             : 'text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover'
         }`}
       >
-        <IconGraph className="w-3.5 h-3.5" />
+        <IconLink className="w-3.5 h-3.5" />
         <span className="hidden md:inline">Связать</span>
       </button>
 

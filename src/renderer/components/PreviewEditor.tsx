@@ -1,647 +1,298 @@
 import {
-
   useEffect,
-
   useImperativeHandle,
-
   useRef,
-
   forwardRef,
-
   useCallback,
-
+  type CSSProperties,
 } from 'react';
-
+import { useEditor, EditorContent } from '@tiptap/react';
+import { TextSelection } from '@tiptap/pm/state';
 import { useAppStore } from '../stores/appStore';
-
 import { flattenMdPaths, resolveWikiLinkTarget } from '@shared/wiki-links';
-
-import { markdownToHtml, htmlToMarkdown } from '../editor/markdown-roundtrip';
-
-import {
-
-  applyPreviewFormat,
-
-  applyPreviewInsert,
-
-  focusEditable,
-
-  focusAfterTitleHeading,
-
-  breakOutOfHeadingOnEnter,
-
-  insertPlainTextPreservingBreaks,
-
-  insertWikiLinkAtSelection,
-
-} from '../editor/contenteditable-commands';
-
+import { createTiptapExtensions } from '../editor/tiptap-setup';
 import { findInEditable, replaceSelectionInEditable } from '../editor/find-in-document';
 
-
-
 export interface PreviewEditorHandle {
-
   insertMarkdown: (before: string, after: string) => void;
-
   applyFormat: (action: string) => void;
-
   insertWikiLink: (targetPath: string) => void;
-
   focus: () => void;
-
   focusBodyStart: () => void;
-
+  getBody: () => string;
   findNext: (query: string) => boolean;
-
   findPrevious: (query: string) => boolean;
-
   replaceOne: (query: string, replacement: string) => boolean;
-
   replaceAll: (query: string, replacement: string) => boolean;
-
 }
-
-
 
 interface PreviewEditorProps {
-
   body: string;
-
   fontSize: number;
-
   isVisible: boolean;
-
+  showRuledLines: boolean;
   onChange: (body: string) => void;
-
   onCheckboxToggle?: (line: number) => void;
-
 }
-
-
 
 export const PreviewEditor = forwardRef<PreviewEditorHandle, PreviewEditorProps>(
-
-  function PreviewEditor({ body, fontSize, isVisible, onChange, onCheckboxToggle }, ref) {
-
-    const editorRef = useRef<HTMLDivElement>(null);
-
-    const lastSynced = useRef<string | null>(null);
-
+  function PreviewEditor({ body, fontSize, isVisible, showRuledLines, onChange }, ref) {
+    const lastEmitted = useRef(body);
     const openFile = useAppStore((s) => s.openFile);
-
     const setStatusMessage = useAppStore((s) => s.setStatusMessage);
-
     const fileTree = useAppStore((s) => s.fileTree);
-
     const archiveTree = useAppStore((s) => s.archiveTree);
-
     const activeFile = useAppStore((s) => s.activeFile);
-
-
-
-    const syncFromEditor = useCallback(() => {
-
-      const root = editorRef.current;
-
-      if (!root) return;
-
-      const nextBody = htmlToMarkdown(root.innerHTML);
-
-      lastSynced.current = nextBody;
-
-      onChange(nextBody);
-
-    }, [onChange]);
-
-
-
-    const loadBody = useCallback((value: string) => {
-
-      if (editorRef.current) {
-
-        editorRef.current.innerHTML = value ? markdownToHtml(value) : '<p><br></p>';
-
-      }
-
-      lastSynced.current = value;
-
-    }, []);
-
-
-
-    useImperativeHandle(ref, () => ({
-
-      insertMarkdown: (before, after) => {
-
-        focusEditable(editorRef.current);
-
-        applyPreviewInsert(before, after);
-
-        syncFromEditor();
-
-      },
-
-      applyFormat: (action) => {
-
-        focusEditable(editorRef.current);
-
-        applyPreviewFormat(action);
-
-        syncFromEditor();
-
-      },
-
-      insertWikiLink: (targetPath) => {
-
-        focusEditable(editorRef.current);
-
-        insertWikiLinkAtSelection(targetPath);
-
-        syncFromEditor();
-
-      },
-
-      focus: () => focusEditable(editorRef.current),
-
-      focusBodyStart: () => {
-        focusAfterTitleHeading(editorRef.current);
-      },
-
-      findNext: (query) => {
-
-        focusEditable(editorRef.current);
-
-        return findInEditable(query, { backwards: false, wrap: true });
-
-      },
-
-      findPrevious: (query) => {
-
-        focusEditable(editorRef.current);
-
-        return findInEditable(query, { backwards: true, wrap: true });
-
-      },
-
-      replaceOne: (query, replacement) => {
-
-        focusEditable(editorRef.current);
-
-        if (!replaceSelectionInEditable(replacement)) {
-
-          return findInEditable(query, { backwards: false, wrap: true });
-
-        }
-
-        syncFromEditor();
-
-        return true;
-
-      },
-
-      replaceAll: (query, replacement) => {
-
-        focusEditable(editorRef.current);
-
-        if (!query) return false;
-
-        let count = 0;
-
-        let guard = 0;
-
-        const root = editorRef.current;
-
-        if (!root) return false;
-
-        const sel = window.getSelection();
-
-        sel?.removeAllRanges();
-
-        const range = document.createRange();
-
-        range.selectNodeContents(root);
-
-        sel?.addRange(range);
-
-        sel?.collapseToStart();
-
-        while (guard < 10_000 && findInEditable(query, { backwards: false, wrap: false })) {
-
-          guard++;
-
-          const before = root.textContent ?? '';
-
-          if (replaceSelectionInEditable(replacement)) {
-
-            count++;
-
-          } else {
-
-            break;
-
-          }
-
-          if ((root.textContent ?? '') === before) break;
-
-        }
-
-        syncFromEditor();
-
-        return count > 0;
-
-      },
-
-    }));
-
-
-
     const prevFile = useRef(activeFile);
-
     const prevVisible = useRef(isVisible);
+    const prevRuled = useRef(showRuledLines);
 
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
 
+    const editor = useEditor({
+      extensions: createTiptapExtensions(),
+      content: body || '',
+      contentType: 'markdown',
+      editable: isVisible,
+      editorProps: {
+        attributes: {
+          class: 'tiptap writing-surface outline-none',
+          spellcheck: 'true',
+        },
+      },
+      onUpdate: ({ editor: ed }) => {
+        const markdown = ed.getMarkdown();
+        if (markdown === lastEmitted.current) return;
+        lastEmitted.current = markdown;
+        onChangeRef.current(markdown);
+      },
+    });
 
     useEffect(() => {
+      editor?.setEditable(isVisible);
+    }, [editor, isVisible]);
+
+    useEffect(() => {
+      if (!editor) return;
 
       const becameVisible = isVisible && !prevVisible.current;
-
       const fileChanged = activeFile !== prevFile.current;
-
-
+      const ruledChanged = showRuledLines !== prevRuled.current;
 
       prevVisible.current = isVisible;
-
       prevFile.current = activeFile;
+      prevRuled.current = showRuledLines;
 
+      if (!isVisible && !fileChanged && !ruledChanged) return;
 
-
-      if (!isVisible) return;
-
-
-
-      if (becameVisible || fileChanged) {
-
-        loadBody(body);
-
-        return;
-
+      const current = editor.getMarkdown();
+      if (
+        fileChanged ||
+        ruledChanged ||
+        becameVisible ||
+        (body !== lastEmitted.current && body !== current)
+      ) {
+        editor.commands.setContent(body || '', { contentType: 'markdown', emitUpdate: false });
+        lastEmitted.current = body;
       }
+    }, [editor, body, activeFile, isVisible, showRuledLines]);
 
-      const root = editorRef.current;
-      const isEditing =
-        root != null &&
-        (document.activeElement === root || root.contains(document.activeElement));
-      if (isEditing) return;
+    const runFormat = useCallback(
+      (action: string) => {
+        if (!editor) return;
+        const chain = editor.chain().focus();
 
-      if (lastSynced.current !== null && body === lastSynced.current) return;
-
-      loadBody(body);
-
-    }, [isVisible, activeFile, body, loadBody]);
-
-
-
-    useEffect(() => {
-
-      return () => {
-
-        const root = editorRef.current;
-
-        if (!root) return;
-
-        const nextBody = htmlToMarkdown(root.innerHTML);
-
-        if (nextBody !== lastSynced.current) {
-
-          onChange(nextBody);
-
+        switch (action) {
+          case 'bold':
+            chain.toggleBold().run();
+            return;
+          case 'italic':
+            chain.toggleItalic().run();
+            return;
+          case 'strikethrough':
+            chain.toggleStrike().run();
+            return;
+          case 'heading1':
+            chain.toggleHeading({ level: 1 }).run();
+            return;
+          case 'heading2':
+            chain.toggleHeading({ level: 2 }).run();
+            return;
+          case 'heading3':
+            chain.toggleHeading({ level: 3 }).run();
+            return;
+          case 'list':
+            chain.toggleBulletList().run();
+            return;
+          case 'ordered':
+            chain.toggleOrderedList().run();
+            return;
+          case 'checkbox':
+            chain.toggleTaskList().run();
+            return;
+          case 'quote':
+            chain.toggleBlockquote().run();
+            return;
+          case 'code':
+            chain.toggleCode().run();
+            return;
+          case 'link': {
+            const url = window.prompt('URL ссылки', 'https://');
+            if (url) chain.setLink({ href: url }).run();
+            return;
+          }
+          case 'alignLeft':
+            chain.setTextAlign('left').run();
+            return;
+          case 'alignCenter':
+            chain.setTextAlign('center').run();
+            return;
+          case 'alignRight':
+            chain.setTextAlign('right').run();
+            return;
+          case 'alignJustify':
+            chain.setTextAlign('justify').run();
+            return;
+          default:
+            return;
         }
-
-      };
-
-    }, [onChange]);
-
-
-
-    const handleInput = () => {
-
-      syncFromEditor();
-
-    };
-
-
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        if (breakOutOfHeadingOnEnter()) {
-          syncFromEditor();
-          return;
-        }
-        if (e.shiftKey) {
-          document.execCommand('insertParagraph');
-        } else {
-          document.execCommand('insertLineBreak');
-        }
-        syncFromEditor();
-        return;
-      }
-
-      if (!e.ctrlKey && !e.metaKey) return;
-
-
-
-      const key = e.key.toLowerCase();
-
-      const withShift = e.shiftKey;
-
-      const withAlt = e.altKey;
-
-
-
-      const shortcuts: Record<string, string | undefined> = {
-
-        b: 'bold',
-
-        i: 'italic',
-
-        k: 'link',
-
-        '`': 'code',
-
-      };
-
-
-
-      if (!withShift && !withAlt && shortcuts[key]) {
-
-        e.preventDefault();
-
-        applyPreviewFormat(shortcuts[key]!);
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withShift && key === 'x') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('strikethrough');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withShift && key === '8') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('list');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withShift && key === '7') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('ordered');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withShift && key === '9') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('checkbox');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withShift && key === '.') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('quote');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withAlt && key === '1') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('heading1');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withAlt && key === '2') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('heading2');
-
-        syncFromEditor();
-
-        return;
-
-      }
-
-
-
-      if (withAlt && key === '3') {
-
-        e.preventDefault();
-
-        applyPreviewFormat('heading3');
-
-        syncFromEditor();
-
-      }
-
-    };
-
-
-
-    const handleClick = (e: React.MouseEvent) => {
-
-      const target = e.target as HTMLElement;
-
-
-
-      if (target.classList.contains('wiki-link')) {
-
-        e.preventDefault();
-
-        const wiki = target.getAttribute('data-wiki');
-
-        if (!wiki) return;
-
-
-
-        const paths = flattenMdPaths([...fileTree, ...archiveTree]);
-
-        const resolved = resolveWikiLinkTarget(wiki, paths);
-
-        if (resolved) {
-
-          openFile(resolved);
-
-        } else {
-
-          setStatusMessage(`Заметка «${wiki}» не найдена`);
-
-        }
-
-        return;
-
-      }
-
-
-
-      if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox') {
-
-        e.preventDefault();
-
-        const li = target.closest('li');
-
-        if (!li || !onCheckboxToggle) return;
-
-
-
-        const lineAttr = li.getAttribute('data-body-line');
-
-        if (lineAttr !== null) {
-
-          const input = target as HTMLInputElement;
-
-          input.checked = !input.checked;
-
-          onCheckboxToggle(parseInt(lineAttr, 10));
-
-        }
-
-      }
-
-    };
-
-
-
-    const handlePaste = (e: React.ClipboardEvent) => {
-      e.preventDefault();
-      const plain = e.clipboardData.getData('text/plain');
-      const html = e.clipboardData.getData('text/html');
-
-      if (html && !plain.includes('\n')) {
-        insertPlainTextPreservingBreaks(extractTextWithBreaksFromHtml(html));
-      } else {
-        insertPlainTextPreservingBreaks(plain);
-      }
-
-      syncFromEditor();
-    };
-
-
-
-    return (
-
-      <div
-
-        ref={editorRef}
-
-        contentEditable
-
-        suppressContentEditableWarning
-
-        spellCheck
-
-        className="markdown-preview writing-surface h-full overflow-y-auto outline-none"
-
-        style={{ fontSize: `${fontSize}px` }}
-
-        onInput={handleInput}
-
-        onKeyDown={handleKeyDown}
-
-        onClick={handleClick}
-
-        onPaste={handlePaste}
-
-      />
-
+      },
+      [editor]
     );
 
+    useImperativeHandle(
+      ref,
+      () => ({
+        insertMarkdown: (before: string, after: string) => {
+          if (!editor) return;
+          const { from, to } = editor.state.selection;
+          const selected = editor.state.doc.textBetween(from, to, '');
+          editor
+            .chain()
+            .focus()
+            .insertContent(`${before}${selected}${after}`, { contentType: 'markdown' })
+            .run();
+        },
+        applyFormat: runFormat,
+        insertWikiLink: (targetPath: string) => {
+          if (!editor) return;
+          const link = targetPath.replace(/\.md$/i, '');
+          editor.chain().focus().insertContent(`[[${link}]]`).run();
+        },
+        focus: () => editor?.commands.focus(),
+        focusBodyStart: () => {
+          if (!editor) return;
+          const { doc } = editor.state;
+          let afterTitle = 0;
+          let seenTitle = false;
+
+          doc.descendants((node, pos) => {
+            if (seenTitle) return false;
+            if (node.type.name === 'heading' && node.attrs.level === 1) {
+              seenTitle = true;
+              afterTitle = pos + node.nodeSize;
+              return false;
+            }
+            return undefined;
+          });
+
+          const safePos = Math.min(Math.max(afterTitle, 1), doc.content.size - 1);
+          const tr = editor.state.tr.setSelection(TextSelection.create(doc, safePos));
+          editor.view.dispatch(tr);
+          editor.commands.focus();
+        },
+        getBody: () => editor?.getMarkdown() ?? '',
+        findNext: (query: string) => {
+          editor?.commands.focus();
+          return findInEditable(query, { backwards: false, wrap: true });
+        },
+        findPrevious: (query: string) => {
+          editor?.commands.focus();
+          return findInEditable(query, { backwards: true, wrap: true });
+        },
+        replaceOne: (query: string, replacement: string) => {
+          editor?.commands.focus();
+          if (!replaceSelectionInEditable(replacement)) {
+            return findInEditable(query, { backwards: false, wrap: true });
+          }
+          const markdown = editor?.getMarkdown();
+          if (markdown !== undefined) {
+            lastEmitted.current = markdown;
+            onChangeRef.current(markdown);
+          }
+          return true;
+        },
+        replaceAll: (query: string, replacement: string) => {
+          if (!editor || !query) return false;
+          editor.commands.focus();
+
+          let count = 0;
+          let guard = 0;
+          const root = editor.view.dom;
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          const range = document.createRange();
+          range.selectNodeContents(root);
+          sel?.addRange(range);
+          sel?.collapseToStart();
+
+          while (guard < 10_000 && findInEditable(query, { backwards: false, wrap: false })) {
+            guard++;
+            const before = root.textContent ?? '';
+            if (replaceSelectionInEditable(replacement)) {
+              count++;
+            } else {
+              break;
+            }
+            if ((root.textContent ?? '') === before) break;
+          }
+
+          const markdown = editor.getMarkdown();
+          lastEmitted.current = markdown;
+          onChangeRef.current(markdown);
+          return count > 0;
+        },
+      }),
+      [editor, runFormat]
+    );
+
+    const handleWikiClick = (e: React.MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.classList.contains('wiki-link')) return;
+
+      e.preventDefault();
+      const wiki = target.getAttribute('data-wiki');
+      if (!wiki) return;
+
+      const paths = flattenMdPaths([...fileTree, ...archiveTree]);
+      const resolved = resolveWikiLinkTarget(wiki, paths);
+      if (resolved) {
+        openFile(resolved);
+      } else {
+        setStatusMessage(`Заметка «${wiki}» не найдена`);
+      }
+    };
+
+    const sheetClass = showRuledLines
+      ? 'notebook-sheet editor-ruled tiptap-sheet'
+      : 'markdown-preview tiptap-sheet';
+
+    return (
+      <div className={showRuledLines ? 'notebook-page h-full overflow-y-auto' : 'h-full overflow-y-auto'}>
+        <div
+          className={sheetClass}
+          style={
+            {
+              fontSize: `${fontSize}px`,
+              '--editor-font-size': `${fontSize}px`,
+            } as CSSProperties
+          }
+          onClick={handleWikiClick}
+        >
+          <EditorContent editor={editor} className="tiptap-editor-host" />
+        </div>
+      </div>
+    );
   }
-
 );
-
-
-
-function extractTextWithBreaksFromHtml(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const blockTags = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TR', 'BLOCKQUOTE']);
-
-  const walk = (node: Node): string => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      return node.textContent ?? '';
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-
-    const el = node as HTMLElement;
-    if (el.tagName === 'BR') return '\n';
-
-    let out = '';
-    for (const child of Array.from(el.childNodes)) {
-      out += walk(child);
-    }
-
-    if (blockTags.has(el.tagName) && out && !out.endsWith('\n')) {
-      out += '\n';
-    }
-    if (blockTags.has(el.tagName) && el.tagName !== 'LI') {
-      out += '\n';
-    }
-
-    return out;
-  };
-
-  const text = walk(doc.body);
-  return text.replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '');
-}

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DrawingData, DrawStroke } from '@shared/note-types';
-import { emptyDrawing, parseDrawingBody, serializeDrawingBody } from '@shared/note-types';
+import {
+  DRAWING_A4_HEIGHT,
+  DRAWING_A4_WIDTH,
+  DRAWING_PAGE_BG,
+  emptyDrawing,
+  normalizeDrawingData,
+  parseDrawingBody,
+  serializeDrawingBody,
+} from '@shared/note-types';
 
 interface DrawingEditorProps {
   body: string;
@@ -9,18 +17,19 @@ interface DrawingEditorProps {
 
 const COLORS = ['#e8e8f0', '#d4677a', '#d9c56e', '#6eb5ff', '#7dcea0', '#ffffff'];
 const WIDTHS = [2, 4, 8];
+const PAGE_PADDING = 16;
 
 function redrawCanvas(canvas: HTMLCanvasElement, data: DrawingData) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  ctx.fillStyle = '#1a1c2e';
+  ctx.fillStyle = DRAWING_PAGE_BG;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   for (const stroke of data.strokes) {
     if (stroke.points.length < 2) continue;
     ctx.beginPath();
-    ctx.strokeStyle = stroke.eraser ? '#1a1c2e' : stroke.color;
+    ctx.strokeStyle = stroke.eraser ? DRAWING_PAGE_BG : stroke.color;
     ctx.lineWidth = stroke.eraser ? stroke.width * 3 : stroke.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -32,10 +41,26 @@ function redrawCanvas(canvas: HTMLCanvasElement, data: DrawingData) {
   }
 }
 
+function fitA4DisplaySize(containerWidth: number, containerHeight: number) {
+  const maxW = Math.max(containerWidth - PAGE_PADDING * 2, 120);
+  const maxH = Math.max(containerHeight - PAGE_PADDING * 2, 120);
+  const ratio = DRAWING_A4_WIDTH / DRAWING_A4_HEIGHT;
+
+  let width = maxW;
+  let height = width / ratio;
+  if (height > maxH) {
+    height = maxH;
+    width = height * ratio;
+  }
+
+  return { width: Math.floor(width), height: Math.floor(height) };
+}
+
 export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [data, setData] = useState<DrawingData>(() => parseDrawingBody(body));
+  const [data, setData] = useState<DrawingData>(() => normalizeDrawingData(parseDrawingBody(body)));
+  const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 });
   const [color, setColor] = useState(COLORS[0]);
   const [width, setWidth] = useState(4);
   const [eraser, setEraser] = useState(false);
@@ -45,8 +70,9 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
 
   const syncOut = useCallback(
     (next: DrawingData) => {
-      setData(next);
-      const serialized = serializeDrawingBody(next);
+      const normalized = normalizeDrawingData(next);
+      setData(normalized);
+      const serialized = serializeDrawingBody(normalized);
       lastBody.current = serialized;
       onChange(serialized);
     },
@@ -55,7 +81,7 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
 
   useEffect(() => {
     if (body !== lastBody.current) {
-      const parsed = parseDrawingBody(body);
+      const parsed = normalizeDrawingData(parseDrawingBody(body));
       setData(parsed);
       lastBody.current = body;
       const canvas = canvasRef.current;
@@ -65,22 +91,25 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = DRAWING_A4_WIDTH;
+    canvas.height = DRAWING_A4_HEIGHT;
+    redrawCanvas(canvas, data);
+  }, [data]);
+
+  useEffect(() => {
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!container) return;
 
     const resize = () => {
-      const w = Math.max(container.clientWidth, 400);
-      const h = Math.max(container.clientHeight, 300);
-      canvas.width = w;
-      canvas.height = h;
-      redrawCanvas(canvas, data);
+      setDisplaySize(fitA4DisplaySize(container.clientWidth, container.clientHeight));
     };
 
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [data]);
+  }, []);
 
   const getPoint = (e: React.MouseEvent | React.TouchEvent): { x: number; y: number } | null => {
     const canvas = canvasRef.current;
@@ -110,7 +139,7 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
     if (!point) return;
     drawingRef.current = true;
     currentStroke.current = {
-      color: eraser ? '#1a1c2e' : color,
+      color: eraser ? DRAWING_PAGE_BG : color,
       width,
       eraser,
       points: [point],
@@ -131,7 +160,7 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
       const a = pts[pts.length - 2];
       const b = pts[pts.length - 1];
       ctx.beginPath();
-      ctx.strokeStyle = stroke.eraser ? '#1a1c2e' : stroke.color;
+      ctx.strokeStyle = stroke.eraser ? DRAWING_PAGE_BG : stroke.color;
       ctx.lineWidth = stroke.eraser ? stroke.width * 3 : stroke.width;
       ctx.lineCap = 'round';
       ctx.moveTo(a.x, a.y);
@@ -167,6 +196,13 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-merkaba-border bg-merkaba-sidebar/30 shrink-0">
+        <span className="text-xs text-merkaba-muted mr-1">Формат</span>
+        <span className="text-xs px-2 py-0.5 rounded-md border border-merkaba-border text-merkaba-muted bg-merkaba-bg/60">
+          А4
+        </span>
+
+        <div className="w-px h-5 bg-merkaba-border mx-1" />
+
         <span className="text-xs text-merkaba-muted mr-1">Кисть</span>
         {COLORS.map((c) => (
           <button
@@ -217,18 +253,35 @@ export function DrawingEditor({ body, onChange }: DrawingEditorProps) {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-hidden bg-merkaba-bg p-2">
-        <canvas
-          ref={canvasRef}
-          className="w-full h-full rounded-xl border border-merkaba-border cursor-crosshair touch-none"
-          onMouseDown={startDraw}
-          onMouseMove={moveDraw}
-          onMouseUp={endDraw}
-          onMouseLeave={endDraw}
-          onTouchStart={startDraw}
-          onTouchMove={moveDraw}
-          onTouchEnd={endDraw}
-        />
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 overflow-auto bg-merkaba-bg flex items-center justify-center p-4"
+      >
+        <div
+          className="relative shrink-0 rounded-sm shadow-[0_8px_32px_rgba(0,0,0,0.45)] ring-1 ring-merkaba-border/80"
+          style={{
+            width: displaySize.width || undefined,
+            height: displaySize.height || undefined,
+            aspectRatio: `${DRAWING_A4_WIDTH} / ${DRAWING_A4_HEIGHT}`,
+            maxWidth: '100%',
+            maxHeight: '100%',
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            width={DRAWING_A4_WIDTH}
+            height={DRAWING_A4_HEIGHT}
+            className="block w-full h-full cursor-crosshair touch-none"
+            style={{ backgroundColor: DRAWING_PAGE_BG }}
+            onMouseDown={startDraw}
+            onMouseMove={moveDraw}
+            onMouseUp={endDraw}
+            onMouseLeave={endDraw}
+            onTouchStart={startDraw}
+            onTouchMove={moveDraw}
+            onTouchEnd={endDraw}
+          />
+        </div>
       </div>
     </div>
   );

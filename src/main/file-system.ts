@@ -9,41 +9,9 @@ import {
   getNotePreview,
   titleToFileName,
 } from '../shared/note-heading';
+import { mapPool } from './async-pool';
 
-const README_CONTENT = `# Merkaba
-
-Личный блокнот с синхронизацией через Яндекс.Диск.
-
-## Структура
-
-- \`notes/\` — обычные заметки
-- \`daily/\` — ежедневные записи
-- \`projects/\` — проектные заметки
-- \`attachments/\` — вложения (изображения и файлы)
-- \`_archive/\` — архив удалённых заметок и папок
-
-## Формат заметок
-
-Заметки в формате Markdown с YAML frontmatter:
-
-\`\`\`markdown
----
-title: Название заметки
-created: 2026-06-13T14:22:00+03:00
-modified: 2026-06-13T15:30:00+03:00
-tags: [тег1, тег2]
-color: rose
----
-
-# Название заметки
-
-Текст заметки...
-
-## Связанные заметки
-
-- [[другая-заметка]]
-\`\`\`
-`;
+const META_SCAN_CONCURRENCY = 8;
 
 export class FileSystem {
   private rootPath: string;
@@ -84,7 +52,73 @@ export class FileSystem {
   }
 
   async renameFile(oldPath: string, newPath: string): Promise<void> {
-    await fs.rename(this.fullPath(oldPath), this.fullPath(newPath));
+    const normalizedOld = oldPath.replace(/\\/g, '/');
+    const normalizedNew = newPath.replace(/\\/g, '/');
+    if (normalizedOld === normalizedNew) return;
+
+    const oldFull = this.fullPath(normalizedOld);
+    const newFull = this.fullPath(normalizedNew);
+
+    let sourceExists = true;
+    try {
+      await fs.access(oldFull);
+    } catch {
+      sourceExists = false;
+    }
+
+    if (!sourceExists) {
+      try {
+        await fs.access(newFull);
+        return;
+      } catch {
+        throw Object.assign(new Error(`ENOENT: no such file or directory, rename '${normalizedOld}' -> '${normalizedNew}'`), {
+          code: 'ENOENT',
+          errno: -4058,
+          syscall: 'rename',
+          path: oldFull,
+          dest: newFull,
+        });
+      }
+    }
+
+    await fs.mkdir(path.dirname(newFull), { recursive: true });
+    try {
+      await fs.rename(oldFull, newFull);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') {
+        try {
+          await fs.access(newFull);
+          return;
+        } catch {
+          // fall through
+        }
+      }
+      throw err;
+    }
+  }
+
+  private async notePathExists(relativePath: string): Promise<boolean> {
+    try {
+      await fs.access(this.fullPath(relativePath));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async allocateUniqueNotePath(folderPath: string, baseSlug: string): Promise<string> {
+    let candidate = baseSlug;
+    let suffix = 2;
+    while (suffix < 100) {
+      const relativePath = folderPath ? `${folderPath}/${candidate}.md` : `${candidate}.md`;
+      if (!(await this.notePathExists(relativePath))) {
+        return relativePath;
+      }
+      candidate = `${baseSlug}-${suffix}`;
+      suffix++;
+    }
+    throw new Error('Слишком много заметок с таким именем');
   }
 
   /** Переместить файл или папку в целевую папку (пустая строка = корень) */
@@ -206,6 +240,7 @@ export class FileSystem {
     }
 
     const nodes: FileNode[] = [];
+    const mdEntries: { entryPath: string; fileName: string }[] = [];
 
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue;
@@ -221,25 +256,41 @@ export class FileSystem {
           children: await this.scanDirectory(entryPath, withMeta),
         });
       } else if (entry.name.endsWith('.md')) {
-        const filePath = entryPath.replace(/\\/g, '/');
-        if (!withMeta) {
+        mdEntries.push({
+          entryPath: entryPath.replace(/\\/g, '/'),
+          fileName: entry.name,
+        });
+      }
+    }
+
+    if (mdEntries.length > 0) {
+      if (!withMeta) {
+        for (const { entryPath, fileName } of mdEntries) {
           nodes.push({
-            name: entry.name.replace(/\.md$/, ''),
-            path: filePath,
+            name: fileName.replace(/\.md$/, ''),
+            path: entryPath,
             type: 'file',
-          });
-        } else {
-          const meta = await this.readNoteTreeMeta(entryPath);
-          nodes.push({
-            name: entry.name.replace(/\.md$/, ''),
-            path: filePath,
-            type: 'file',
-            color: meta.color,
-            noteType: meta.noteType,
-            title: meta.title,
-            preview: meta.preview,
           });
         }
+      } else {
+        const fileNodes = await mapPool(
+          mdEntries,
+          async ({ entryPath, fileName }) => {
+            const meta = await this.readNoteTreeMeta(entryPath);
+            return {
+              name: fileName.replace(/\.md$/, ''),
+              path: entryPath,
+              type: 'file' as const,
+              color: meta.color,
+              noteType: meta.noteType,
+              title: meta.title,
+              preview: meta.preview,
+              tags: meta.tags,
+            };
+          },
+          META_SCAN_CONCURRENCY
+        );
+        nodes.push(...fileNodes);
       }
     }
 
@@ -251,7 +302,7 @@ export class FileSystem {
 
   private async readNoteTreeMeta(
     relativePath: string
-  ): Promise<{ color: string | null; noteType: NoteType; title: string; preview: string }> {
+  ): Promise<{ color: string | null; noteType: NoteType; title: string; preview: string; tags: string[] }> {
     try {
       const content = await this.readFile(relativePath);
       const { meta, body } = parseNote(content);
@@ -259,14 +310,14 @@ export class FileSystem {
         meta.noteType !== 'text' ? meta.noteType : inferNoteTypeFromBody(body);
       const title = getNoteDisplayTitle(meta.title, body, relativePath);
       const preview = getNotePreview(body, noteType);
-      return { color: meta.color, noteType, title, preview };
+      return { color: meta.color, noteType, title, preview, tags: meta.tags };
     } catch {
       const base = relativePath.split('/').pop()?.replace(/\.md$/i, '') ?? 'Заметка';
-      return { color: null, noteType: 'text', title: base, preview: '' };
+      return { color: null, noteType: 'text', title: base, preview: '', tags: [] };
     }
   }
 
-  /** Создание структуры папок Merkaba при первом запуске */
+  /** Создание корня хранилища при первом запуске (legacy) */
   static async initializeVault(yandexPath: string): Promise<{ rootPath: string; isNew: boolean }> {
     const rootPath = path.join(yandexPath, 'Merkaba');
     let isNew = false;
@@ -276,33 +327,7 @@ export class FileSystem {
     } catch {
       isNew = true;
       await fs.mkdir(rootPath, { recursive: true });
-      await fs.mkdir(path.join(rootPath, 'notes'), { recursive: true });
-      await fs.mkdir(path.join(rootPath, 'daily'), { recursive: true });
-      await fs.mkdir(path.join(rootPath, 'projects'), { recursive: true });
-      await fs.mkdir(path.join(rootPath, 'attachments'), { recursive: true });
       await fs.mkdir(path.join(rootPath, '.merkaba'), { recursive: true });
-      await fs.writeFile(path.join(rootPath, 'README.md'), README_CONTENT, 'utf-8');
-
-      const welcomeNote = `---
-title: Добро пожаловать в Merkaba
-created: ${new Date().toISOString()}
-modified: ${new Date().toISOString()}
-tags: [приветствие]
----
-
-# Добро пожаловать в Merkaba
-
-Это ваша первая заметка. Начните писать!
-
-## Возможности
-
-- Редактирование Markdown
-- Wiki-ссылки: [[README]]
-- Чеклисты: - [ ] задача
-- Поиск по всем заметкам
-- Граф связей между заметками
-`;
-      await fs.writeFile(path.join(rootPath, 'notes', 'dobro-pozhalovat.md'), welcomeNote, 'utf-8');
     }
 
     return { rootPath, isNew };
@@ -321,13 +346,12 @@ tags: [приветствие]
   async createNote(folderPath: string, name: string, noteType: string = 'text'): Promise<{ path: string; content: string }> {
     const type = noteType === 'drawing' || noteType === 'music' ? noteType : 'text';
     const title = type === 'text' ? name.trim() || 'Новая заметка' : getDefaultTitle(type, name);
-    const fileBase =
+    const relativePath =
       type === 'text'
-        ? `${titleToFileName(title) || 'zametka'}-${Date.now()}`
-        : FileSystem.sanitizeFileName(name);
-    const sanitized = fileBase.endsWith('.md') ? fileBase.slice(0, -3) : fileBase;
-    const fileName = `${sanitized}.md`;
-    const relativePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+        ? await this.allocateUniqueNotePath(folderPath, titleToFileName(title) || 'zametka')
+        : folderPath
+          ? `${folderPath}/${FileSystem.sanitizeFileName(name)}.md`
+          : `${FileSystem.sanitizeFileName(name)}.md`;
     const now = new Date().toISOString();
     const body = buildInitialBody(type, title);
     const typeLine = type !== 'text' ? `type: ${type}\n` : '';

@@ -1,10 +1,12 @@
-import { useState } from 'react';
 import { IconList } from './Icons';
 import { SyncButton } from './SyncButton';
 import { SyncFilesDialog } from './SyncFilesDialog';
+import { useAppStore } from '../stores/appStore';
 
 export function SyncControls() {
-  const [showFiles, setShowFiles] = useState(false);
+  const showSyncFilesDialog = useAppStore((s) => s.showSyncFilesDialog);
+  const openSyncFilesDialog = useAppStore((s) => s.openSyncFilesDialog);
+  const closeSyncFilesDialog = useAppStore((s) => s.closeSyncFilesDialog);
 
   return (
     <>
@@ -12,14 +14,14 @@ export function SyncControls() {
         <SyncButton />
         <button
           type="button"
-          onClick={() => setShowFiles(true)}
+          onClick={() => openSyncFilesDialog()}
           title="Список файлов на Диске"
           className="p-1.5 rounded-full text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover border border-transparent hover:border-merkaba-border transition-colors"
         >
           <IconList className="w-3.5 h-3.5" />
         </button>
       </div>
-      {showFiles && <SyncFilesDialog onClose={() => setShowFiles(false)} />}
+      {showSyncFilesDialog && <SyncFilesDialog onClose={() => closeSyncFilesDialog()} />}
     </>
   );
 }

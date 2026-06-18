@@ -10,6 +10,7 @@ export interface FileNode {
   title?: string;
   /** Краткий фрагмент текста для списка */
   preview?: string;
+  tags?: string[];
   children?: FileNode[];
 }
 
@@ -28,6 +29,8 @@ export interface NoteMeta {
   noteType: NoteType;
 }
 
+export type NoteSaveState = 'idle' | 'saving' | 'saved' | 'error';
+
 export interface OpenFile {
   path: string;
   content: string;
@@ -35,6 +38,7 @@ export interface OpenFile {
   meta: NoteMeta;
   isDirty: boolean;
   color: string | null;
+  saveState?: NoteSaveState;
 }
 
 export interface SearchResult {
@@ -64,23 +68,6 @@ export interface Sticker {
   linkedNotePath?: string | null;
 }
 
-export interface GraphNode {
-  id: string;
-  label: string;
-  group: string;
-  links: number;
-}
-
-export interface GraphEdge {
-  source: string;
-  target: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
-
 export interface ConflictFile {
   mainPath: string;
   conflictPath: string;
@@ -102,6 +89,10 @@ export interface Config {
   syncMode: 'cloud' | 'local';
   /** Автоматическая синхронизация с облаком (по умолчанию — только вручную) */
   autoSync: boolean;
+  /** Номера строк и подсветка текущей строки в режиме исходника */
+  showLineNumbers: boolean;
+  /** Горизонтальные линии-подчёркивания под каждой строкой, как в блокноте */
+  showRuledLines: boolean;
 }
 
 export const defaultConfig: Config = {
@@ -114,4 +105,6 @@ export const defaultConfig: Config = {
   language: 'ru',
   syncMode: 'cloud',
   autoSync: false,
+  showLineNumbers: true,
+  showRuledLines: false,
 };

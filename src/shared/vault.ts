@@ -1,10 +1,4 @@
-/** Пространства, создаваемые только при первой инициализации хранилища */
-export const DEFAULT_VAULT_SPACES = ['notes', 'daily', 'projects'] as const;
-
-/** Служебные папки — всегда должны существовать */
-export const SYSTEM_VAULT_FOLDERS = ['attachments', '_archive'] as const;
-
-/** Маркер: хранилище уже инициализировано, дефолтные пространства не пересоздавать */
+/** Маркер: хранилище уже инициализировано */
 export const VAULT_INIT_MARKER = '.merkaba/.vault-initialized';
 
 /** Признаки существующего хранилища (для миграции без маркера) */

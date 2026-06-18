@@ -3,7 +3,6 @@ import fs from 'fs';
 import { type FileSystem, updateModified } from './file-system';
 import { ConfigManager } from './config';
 import { SearchIndexer } from './indexer';
-import { GraphBuilder } from './graph';
 import { ConflictDetector, toggleCheckboxInFile } from './conflict-detector';
 import { StickerStore } from './sticker-store';
 import { PinnedStore } from './pinned-store';
@@ -29,14 +28,13 @@ import {
 } from './yandex-oauth';
 import { clearAuth as clearYandexAuth, initVaultPath } from './auth-store';
 import { saveYandexCredentials, getCredentialsInfo } from './yandex-config';
-import type { Config } from '../shared/types';
+import { bindAppShutdown, markAppQuitting, resetShutdownState, syncBeforeExit } from './app-shutdown';
 import type { AuthStatus, SyncStatus, VaultInitResult } from '../shared/yandex';
 
 let fileSystem: FileSystem | null = null;
 let configManager: ConfigManager | null = null;
 let syncEngine: SyncEngine | null = null;
 const searchIndexer = new SearchIndexer();
-const graphBuilder = new GraphBuilder();
 const conflictDetector = new ConflictDetector();
 let watcher: fs.FSWatcher | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -137,6 +135,11 @@ async function initVaultLocalFirst(): Promise<VaultInitResult> {
 
 export function registerIpcHandlers(win: BrowserWindow): void {
   mainWindow = win;
+  bindAppShutdown({
+    getMainWindow: () => mainWindow,
+    getSyncEngine: () => syncEngine,
+    onStatus: sendStatus,
+  });
 
   // --- Яндекс OAuth и синхронизация ---
 
@@ -190,11 +193,13 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle('auth:logout', async () => {
+    await syncBeforeExit();
     syncEngine?.stopPeriodicSync();
     await clearYandexAuth();
     fileSystem = null;
     configManager = null;
     syncEngine = null;
+    resetShutdownState();
     if (watcher) {
       watcher.close();
       watcher = null;
@@ -210,6 +215,11 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     return syncEngine.getFileSyncStatuses(getPendingUploadPaths());
   });
 
+  ipcMain.handle('sync:failedOps', async () => {
+    if (!syncEngine) return [];
+    return syncEngine.getFailedOps();
+  });
+
   ipcMain.handle('sync:pull', async () => {
     await getSync().runPullSync(async () => {
       getSync().reportProgress(2, 'Отправка локальных правок...');
@@ -222,11 +232,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
   });
 
   ipcMain.handle('sync:retryFailed', async (_, paths?: string[]) => {
-    const count = await getSync().retryFailed(paths);
-    if (count > 0) {
-      await getSync().syncAll();
-    }
-    return count;
+    await getSync().retryFailed(paths);
+    await getSync().syncAll();
+    return getSync().getStatus().failedCount ?? 0;
   });
 
   ipcMain.handle('vault:initCloud', async (): Promise<VaultInitResult> => {
@@ -328,6 +336,7 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
     await getSync().clearArchiveRemoteOrQueue();
     await rebuildAll();
+    notifyFsChanged();
     return { mdFiles };
   });
 
@@ -349,10 +358,6 @@ export function registerIpcHandlers(win: BrowserWindow): void {
 
   ipcMain.handle('search:rebuild', async () => {
     await rebuildAll();
-  });
-
-  ipcMain.handle('graph:get', async () => {
-    return graphBuilder.buildGraph(getFs());
   });
 
   ipcMain.handle('stickers:get', async () => {
@@ -435,7 +440,9 @@ export function registerIpcHandlers(win: BrowserWindow): void {
     }
   });
 
-  ipcMain.handle('window:close', () => {
+  ipcMain.handle('window:close', async () => {
+    await syncBeforeExit();
+    markAppQuitting();
     win.close();
   });
 }

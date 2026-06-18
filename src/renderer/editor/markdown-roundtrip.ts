@@ -60,6 +60,44 @@ turndown.addRule('strikethrough', {
 
 export { splitFrontmatter, joinFrontmatter };
 
+const BLOCK_TAGS = new Set([
+  'P',
+  'DIV',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'BLOCKQUOTE',
+  'UL',
+  'OL',
+  'PRE',
+  'HR',
+  'TABLE',
+]);
+
+function isEmptyBlockElement(el: HTMLElement): boolean {
+  if (el.getAttribute('data-merkaba-blank') === '1') return true;
+  if (!BLOCK_TAGS.has(el.tagName)) return false;
+  if (el.closest('pre')) return false;
+  const html = el.innerHTML.trim().toLowerCase();
+  if (!html || html === '<br>' || html === '<br/>') return true;
+  return !(el.textContent ?? '').replace(/\u00a0/g, ' ').trim();
+}
+
+function splitBodyPreservingBlankLines(body: string): { text: string; blankLinesBefore: number }[] {
+  if (!body.trim()) return [];
+
+  const parts = body.split(/\n{2,}/);
+  const gaps = body.match(/\n{2,}/g) ?? [];
+
+  return parts.map((text, index) => ({
+    text,
+    blankLinesBefore: index === 0 ? 0 : Math.max(0, (gaps[index - 1]?.length ?? 2) - 2),
+  }));
+}
+
 function annotateTaskItems(html: string, body: string): string {
   const taskLines = collectTaskLineIndices(body);
   if (taskLines.length === 0) return html;
@@ -82,47 +120,106 @@ function annotateTaskItems(html: string, body: string): string {
   return wrapper.innerHTML;
 }
 
+function renderMarkdownSegment(text: string): string {
+  const withLinks = substituteWikiLinks(text);
+  return md.render(withLinks).trim();
+}
+
+const BLANK_LINE_PLACEHOLDER = '<span data-merkaba-blank="1"></span>';
+
+function markBlankBlocks(html: string): string {
+  const emptyBlock =
+    /<(?:p|div)(?:\s[^>]*)?>(?:\s|&nbsp;|&#160;|<br\s*\/?>)*<\/(?:p|div)>/gi;
+  return html.replace(emptyBlock, BLANK_LINE_PLACEHOLDER);
+}
+
+function turndownBlock(html: string): string {
+  return turndown.turndown(html).trim();
+}
+
+function joinMarkdownChunks(chunks: string[]): string {
+  let result = '';
+  let pendingExtraNewlines = 0;
+
+  for (const chunk of chunks) {
+    if (chunk === '') {
+      pendingExtraNewlines++;
+      continue;
+    }
+
+    if (result.length > 0) {
+      result += '\n\n' + '\n'.repeat(pendingExtraNewlines);
+    }
+    pendingExtraNewlines = 0;
+    result += chunk;
+  }
+
+  if (pendingExtraNewlines > 0 && result.length > 0) {
+    result += '\n'.repeat(2 + pendingExtraNewlines);
+  }
+
+  return result.replace(/[ \t]+\n/g, '\n').replace(/\s+$/, '');
+}
+
 /** contenteditable часто даёт div на каждую строку — нормализуем перед turndown */
-function prepareEditableHtml(html: string): string {
-  const normalized = html.replace(/\u00a0/g, ' ');
+function htmlBlocksToMarkdown(html: string): string {
+  const normalized = markBlankBlocks(html.replace(/\u00a0/g, ' '));
 
   const wrapper = document.createElement('div');
   wrapper.innerHTML = normalized;
 
-  const blockTags = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'UL', 'OL', 'PRE', 'HR', 'TABLE']);
+  const chunks: string[] = [];
 
-  const parts: string[] = [];
   for (const child of Array.from(wrapper.childNodes)) {
     if (child.nodeType === Node.TEXT_NODE) {
-      const text = child.textContent ?? '';
-      if (text.trim()) parts.push(text);
+      const text = (child.textContent ?? '').trim();
+      if (text) chunks.push(text);
       continue;
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
 
     const el = child as HTMLElement;
-    if (blockTags.has(el.tagName)) {
-      parts.push(el.outerHTML);
-    } else {
-      parts.push(el.outerHTML);
+    if (el.getAttribute('data-merkaba-blank') === '1') {
+      chunks.push('');
+      continue;
     }
+
+    if (!BLOCK_TAGS.has(el.tagName)) {
+      const piece = turndownBlock(el.outerHTML);
+      if (piece) chunks.push(piece);
+      continue;
+    }
+
+    if (isEmptyBlockElement(el)) {
+      chunks.push('');
+      continue;
+    }
+
+    const piece = turndownBlock(el.outerHTML);
+    if (piece) chunks.push(piece);
   }
 
-  if (parts.length === 0) return normalized;
-  return parts.join('\n');
+  if (chunks.length === 0) return turndown.turndown(normalized).trim();
+  return joinMarkdownChunks(chunks);
 }
 
 export function markdownToHtml(body: string): string {
-  const withLinks = substituteWikiLinks(body);
-  const html = md.render(withLinks);
+  const segments = splitBodyPreservingBlankLines(body);
+  const htmlParts: string[] = [];
+
+  for (const segment of segments) {
+    for (let i = 0; i < segment.blankLinesBefore; i++) {
+      htmlParts.push(BLANK_LINE_PLACEHOLDER);
+    }
+    if (segment.text.trim()) {
+      htmlParts.push(renderMarkdownSegment(segment.text));
+    }
+  }
+
+  const html = htmlParts.join('\n');
   return annotateTaskItems(html, body);
 }
 
 export function htmlToMarkdown(html: string): string {
-  const prepared = prepareEditableHtml(html);
-  const markdown = turndown.turndown(prepared);
-  return markdown
-    .replace(/\n{4,}/g, '\n\n\n')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\s+$/, '');
+  return htmlBlocksToMarkdown(html);
 }

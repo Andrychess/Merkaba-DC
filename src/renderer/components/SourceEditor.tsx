@@ -1,6 +1,6 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
-import { EditorState, EditorSelection, Prec } from '@codemirror/state';
+import { Compartment, EditorState, EditorSelection, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language';
@@ -31,6 +31,8 @@ interface SourceEditorProps {
   onChange: (content: string) => void;
   fontSize: number;
   isVisible: boolean;
+  showLineNumbers: boolean;
+  showRuledLines: boolean;
 }
 
 export interface SourceEditorHandle {
@@ -39,6 +41,7 @@ export interface SourceEditorHandle {
   insertWikiLink: (targetPath: string) => void;
   focus: () => void;
   focusBodyStart: () => void;
+  getBody: () => string;
   findNext: (query: string) => boolean;
   findPrevious: (query: string) => boolean;
   replaceOne: (query: string, replacement: string) => boolean;
@@ -60,8 +63,15 @@ const markdownFormatKeymap = keymap.of([
   { key: 'Mod-Shift-.', run: prefixLines('> '), preventDefault: true },
 ]);
 
+const lineUiCompartment = new Compartment();
+
+function lineUiExtensions(enabled: boolean) {
+  if (!enabled) return [];
+  return [lineNumbers(), highlightActiveLine()];
+}
+
 export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(
-  function SourceEditor({ content, onChange, fontSize, isVisible }, ref) {
+  function SourceEditor({ content, onChange, fontSize, isVisible, showLineNumbers, showRuledLines }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef<EditorView | null>(null);
     const onChangeRef = useRef(onChange);
@@ -100,6 +110,7 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(
         });
         view.focus();
       },
+      getBody: () => viewRef.current?.state.doc.toString() ?? '',
       findNext: (query: string) => {
         const view = viewRef.current;
         if (!view || !query) return false;
@@ -138,8 +149,7 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(
       const state = EditorState.create({
         doc: content,
         extensions: [
-          lineNumbers(),
-          highlightActiveLine(),
+          lineUiCompartment.of(lineUiExtensions(showLineNumbers)),
           drawSelection(),
           history(),
           Prec.highest(markdownFormatKeymap),
@@ -175,7 +185,18 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(
     }, []);
 
     useEffect(() => {
-      containerRef.current?.style.setProperty('--source-editor-font-size', `${fontSize}px`);
+      const view = viewRef.current;
+      if (!view) return;
+      view.dispatch({
+        effects: lineUiCompartment.reconfigure(lineUiExtensions(showLineNumbers)),
+      });
+    }, [showLineNumbers]);
+
+    useEffect(() => {
+      const el = containerRef.current;
+      if (!el) return;
+      el.style.setProperty('--source-editor-font-size', `${fontSize}px`);
+      el.style.setProperty('--editor-font-size', `${fontSize}px`);
     }, [fontSize]);
 
     useEffect(() => {
@@ -196,6 +217,11 @@ export const SourceEditor = forwardRef<SourceEditorHandle, SourceEditorProps>(
       }
     }, [content, isVisible]);
 
-    return <div ref={containerRef} className="h-full" />;
+    return (
+      <div
+        ref={containerRef}
+        className={`source-editor-host h-full${showRuledLines ? ' editor-ruled' : ''}`}
+      />
+    );
   }
 );

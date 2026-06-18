@@ -8,9 +8,11 @@ import { MusicEditor } from './MusicEditor';
 import { Toolbar } from './Toolbar';
 import { WikiLinkPicker } from './WikiLinkPicker';
 import { NoteMetaPanel } from './NoteMetaPanel';
+import { SaveIndicator } from './SaveIndicator';
 import { FindReplaceBar } from './FindReplaceBar';
 import { NoteCreateMenu } from './NoteCreateMenu';
 import { IconFile } from './Icons';
+import { registerEditorFlush } from '../editor/editor-flush';
 
 export function Editor() {
   const activeFile = useAppStore((s) => s.activeFile);
@@ -20,7 +22,6 @@ export function Editor() {
   const updateContent = useAppStore((s) => s.updateContent);
   const updateNoteMeta = useAppStore((s) => s.updateNoteMeta);
   const setEditorMode = useAppStore((s) => s.setEditorMode);
-  const toggleCheckbox = useAppStore((s) => s.toggleCheckbox);
   const createNewNote = useAppStore((s) => s.createNewNote);
   const setNoteColor = useAppStore((s) => s.setNoteColor);
   const sourceRef = useRef<SourceEditorHandle>(null);
@@ -34,6 +35,21 @@ export function Editor() {
   const [findBarMode, setFindBarMode] = useState<'find' | 'replace'>('find');
   const [findQuery, setFindQuery] = useState('');
   const [findReplacement, setFindReplacement] = useState('');
+
+  useEffect(() => {
+    registerEditorFlush(() => {
+      const path = useAppStore.getState().activeFile;
+      if (!path) return null;
+      const mode = useAppStore.getState().editorMode;
+      const body =
+        mode === 'preview'
+          ? previewRef.current?.getBody()
+          : sourceRef.current?.getBody();
+      if (body === undefined) return null;
+      return { path, body };
+    });
+    return () => registerEditorFlush(null);
+  }, []);
 
   useEffect(() => {
     if (documentFindToken > 0 && activeFile) {
@@ -156,6 +172,8 @@ export function Editor() {
             onMetaChange={updateNoteMeta}
           />
 
+          <SaveIndicator />
+
           <div className="ml-auto flex items-center gap-2 shrink-0">
             {isTextNote && (
               <>
@@ -217,6 +235,7 @@ export function Editor() {
             body={activeOpenFile.body}
             title={activeOpenFile.meta.title}
             fontSize={config.fontSize}
+            showRuledLines={config.showRuledLines}
             onChange={updateContent}
             onTitleChange={(title) => updateNoteMeta({ title })}
           />
@@ -231,6 +250,8 @@ export function Editor() {
                 onChange={updateContent}
                 fontSize={config.fontSize}
                 isVisible={editorMode === 'source'}
+                showLineNumbers={config.showLineNumbers}
+                showRuledLines={config.showRuledLines}
               />
             </div>
             <div className={editorMode === 'preview' ? 'absolute inset-0' : 'hidden'}>
@@ -239,8 +260,8 @@ export function Editor() {
                 body={activeOpenFile.body}
                 fontSize={config.fontSize}
                 isVisible={editorMode === 'preview'}
+                showRuledLines={config.showRuledLines}
                 onChange={updateContent}
-                onCheckboxToggle={(line) => toggleCheckbox(activeFile, line)}
               />
             </div>
           </>

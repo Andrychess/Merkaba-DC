@@ -18,8 +18,6 @@ const CSS_VARS: Array<[keyof ThemeColors, string]> = [
   ['borderStrong', '--merkaba-border-strong'],
   ['shadowPanel', '--merkaba-shadow-panel'],
   ['shadowGlow', '--merkaba-shadow-glow'],
-  ['graphLink', '--merkaba-graph-link'],
-  ['graphNodeStroke', '--merkaba-graph-node-stroke'],
   ['scrollbar', '--merkaba-scrollbar'],
   ['scrollbarHover', '--merkaba-scrollbar-hover'],
 ];

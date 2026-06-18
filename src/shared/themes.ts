@@ -15,8 +15,6 @@ export interface ThemeColors {
   borderStrong: string;
   shadowPanel: string;
   shadowGlow: string;
-  graphLink: string;
-  graphNodeStroke: string;
   scrollbar: string;
   scrollbarHover: string;
 }
@@ -42,8 +40,6 @@ const midnight: ThemeColors = {
   borderStrong: 'rgba(255, 255, 255, 0.14)',
   shadowPanel: '0 4px 24px rgba(0, 0, 0, 0.4)',
   shadowGlow: '0 0 20px rgba(244, 63, 94, 0.15)',
-  graphLink: 'rgba(255, 255, 255, 0.1)',
-  graphNodeStroke: 'rgba(255, 255, 255, 0.2)',
   scrollbar: 'rgba(255, 255, 255, 0.1)',
   scrollbarHover: 'rgba(255, 255, 255, 0.18)',
 };
@@ -63,8 +59,6 @@ const daylight: ThemeColors = {
   borderStrong: 'rgba(0, 0, 0, 0.14)',
   shadowPanel: '0 4px 24px rgba(0, 0, 0, 0.08)',
   shadowGlow: '0 0 20px rgba(225, 29, 72, 0.12)',
-  graphLink: 'rgba(0, 0, 0, 0.1)',
-  graphNodeStroke: 'rgba(0, 0, 0, 0.15)',
   scrollbar: 'rgba(0, 0, 0, 0.12)',
   scrollbarHover: 'rgba(0, 0, 0, 0.2)',
 };

@@ -29,7 +29,6 @@ contextBridge.exposeInMainWorld('merkaba', {
   },
   search: (query: string) => ipcRenderer.invoke('search:query', query),
   rebuildIndex: () => ipcRenderer.invoke('search:rebuild'),
-  getGraph: () => ipcRenderer.invoke('graph:get'),
   getStickers: () => ipcRenderer.invoke('stickers:get'),
   createSticker: (input?: {
     title?: string;
@@ -64,6 +63,19 @@ contextBridge.exposeInMainWorld('merkaba', {
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  onPrepareShutdown: (callback: () => void | Promise<void>) => {
+    const handler = async () => {
+      try {
+        await callback();
+      } finally {
+        ipcRenderer.send('app:shutdown-ready');
+      }
+    };
+    ipcRenderer.on('app:prepare-shutdown', handler);
+    return () => {
+      ipcRenderer.removeListener('app:prepare-shutdown', handler);
+    };
+  },
   onStatus: (callback: (message: string) => void) => {
     ipcRenderer.on('status:message', (_, message) => callback(message));
   },
@@ -84,4 +96,5 @@ contextBridge.exposeInMainWorld('merkaba', {
   retryFailedSync: (paths?: string[]) => ipcRenderer.invoke('sync:retryFailed', paths),
   getSyncStatus: () => ipcRenderer.invoke('sync:status'),
   getFileSyncStatuses: () => ipcRenderer.invoke('sync:fileStatuses'),
+  getSyncFailedOps: () => ipcRenderer.invoke('sync:failedOps'),
 });

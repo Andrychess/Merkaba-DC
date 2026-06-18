@@ -18,4 +18,16 @@ describe('resolveNotePathForTitle', () => {
     const paths = new Set(['notes/test.md', 'notes/test-2.md']);
     expect(resolveNotePathForTitle('Test', 'notes/other.md', paths)).toBe('notes/test-3.md');
   });
+
+  it('renames legacy timestamp file to title slug', () => {
+    const paths = new Set(['notes/новая-заметка-1781598204066.md']);
+    expect(resolveNotePathForTitle('Новая заметка', 'notes/новая-заметка-1781598204066.md', paths)).toBe(
+      'notes/новая-заметка.md'
+    );
+  });
+
+  it('keeps legacy timestamp file when clean slug already exists elsewhere', () => {
+    const paths = new Set(['notes/новая-заметка.md', 'notes/новая-заметка-1781598204066.md']);
+    expect(resolveNotePathForTitle('Новая заметка', 'notes/новая-заметка-1781598204066.md', paths)).toBeNull();
+  });
 });

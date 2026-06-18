@@ -4,6 +4,7 @@ import { formatSpaceDisplay } from '@shared/spaces';
 import { useAppStore } from '../stores/appStore';
 import { IconFolder, IconChevron } from './Icons';
 import { NoteTypeIcon } from './NoteTypeIcon';
+import { ContextMenu } from './ContextMenu';
 import { getNoteColorHex } from '@shared/note-colors';
 
 interface ArchiveTreeItemProps {
@@ -13,14 +14,14 @@ interface ArchiveTreeItemProps {
 
 function ArchiveTreeItem({ node, depth }: ArchiveTreeItemProps) {
   const [expanded, setExpanded] = useState(depth < 2);
-  const [showMenu, setShowMenu] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const openFile = useAppStore((s) => s.openFile);
   const activeFile = useAppStore((s) => s.activeFile);
   const moveItem = useAppStore((s) => s.moveItem);
   const refreshArchiveTree = useAppStore((s) => s.refreshArchiveTree);
   const activeSpace = useAppStore((s) => s.activeSpace);
   const spaceSymbols = useAppStore((s) => s.spaceSymbols);
-  const refreshFileTree = useAppStore((s) => s.refreshFileTree);
+  const enrichFileTree = useAppStore((s) => s.enrichFileTree);
 
   const isActive = node.type === 'file' && node.path === activeFile;
   const colorHex = node.type === 'file' ? getNoteColorHex(node.color) : null;
@@ -36,9 +37,11 @@ function ArchiveTreeItem({ node, depth }: ArchiveTreeItemProps) {
   const handleRestore = async (target: string) => {
     await moveItem(node.path, target);
     await refreshArchiveTree();
-    await refreshFileTree();
-    setShowMenu(false);
+    await enrichFileTree();
+    setContextMenu(null);
   };
+
+  const closeContextMenu = () => setContextMenu(null);
 
   return (
     <div>
@@ -52,7 +55,7 @@ function ArchiveTreeItem({ node, depth }: ArchiveTreeItemProps) {
         onClick={handleClick}
         onContextMenu={(e) => {
           e.preventDefault();
-          setShowMenu(true);
+          setContextMenu({ x: e.clientX, y: e.clientY });
         }}
       >
         {(isActive || colorHex) && (
@@ -79,33 +82,34 @@ function ArchiveTreeItem({ node, depth }: ArchiveTreeItemProps) {
         )}
 
         <span className="truncate flex-1">{node.name}</span>
-
-        {showMenu && (
-          <div
-            className="absolute right-0 top-full z-50 bg-merkaba-elevated border border-merkaba-border-strong rounded-xl shadow-panel py-1.5 min-w-[200px] animate-fade-in"
-            onMouseLeave={() => setShowMenu(false)}
-          >
-            <button
-              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRestore(activeSpace);
-              }}
-            >
-              Восстановить в «{formatSpaceDisplay(activeSpace, spaceSymbols)}»
-            </button>
-            <button
-              className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRestore('notes');
-              }}
-            >
-              Восстановить в notes
-            </button>
-          </div>
-        )}
       </div>
+
+      <ContextMenu
+        open={contextMenu !== null}
+        x={contextMenu?.x ?? 0}
+        y={contextMenu?.y ?? 0}
+        onClose={closeContextMenu}
+        minWidth={200}
+      >
+        <button
+          className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleRestore(activeSpace);
+          }}
+        >
+          Восстановить в «{formatSpaceDisplay(activeSpace, spaceSymbols)}»
+        </button>
+        <button
+          className="w-full text-left px-3 py-2 hover:bg-merkaba-hover text-sm transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleRestore('notes');
+          }}
+        >
+          Восстановить в notes
+        </button>
+      </ContextMenu>
 
       {node.type === 'folder' &&
         expanded &&

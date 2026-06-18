@@ -3,7 +3,27 @@ import { applyTitleHeading, getNoteDisplayTitle } from '@shared/note-heading';
 import { toggleTaskLine } from '@shared/markdown-tasks';
 import { getSpaceForPath, isSpaceId, persistActiveSpace } from '@shared/spaces';
 import { collectFilePaths, setTreeNodeColor } from '@renderer/utils/note-tree';
+import { readActiveEditorBody } from '@renderer/editor/editor-flush';
+import { patchFileBody } from '@renderer/editor/patch-file-body';
+import { enqueueFileSave, migrateFileSaveQueue } from '@renderer/editor/save-queue';
+import type { NoteSaveState } from '@shared/types';
 import type { AppSlice, AppState } from '../app-state';
+import { resolveNotePathForTitle } from '@renderer/utils/note-helpers';
+
+function markSaveState(
+  openFiles: AppState['openFiles'],
+  path: string,
+  saveState: NoteSaveState | undefined
+): AppState['openFiles'] {
+  return openFiles.map((f) => (f.path === path ? { ...f, saveState } : f));
+}
+
+async function saveDirtyFile(get: () => AppState, path: string): Promise<void> {
+  const file = get().openFiles.find((f) => f.path === path);
+  if (file?.isDirty) {
+    await get().saveFile(path);
+  }
+}
 
 export const createEditorSlice: AppSlice<Pick<
   AppState,
@@ -13,6 +33,8 @@ export const createEditorSlice: AppSlice<Pick<
   | 'closeFile'
   | 'setActiveFile'
   | 'updateContent'
+  | 'applyFileBody'
+  | 'flushEditorToStore'
   | 'updateNoteMeta'
   | 'saveFile'
   | 'toggleCheckbox'
@@ -23,6 +45,12 @@ export const createEditorSlice: AppSlice<Pick<
 
   openFile: async (filePath) => {
     try {
+      const prev = get().activeFile;
+      if (prev && prev !== filePath) {
+        get().flushEditorToStore();
+        void saveDirtyFile(get, prev);
+      }
+
       const space = getSpaceForPath(filePath);
       const { openFiles, activeSpace } = get();
       const existing = openFiles.find((f) => f.path === filePath);
@@ -76,19 +104,34 @@ export const createEditorSlice: AppSlice<Pick<
   },
 
   closeFile: (filePath) => {
-    const { openFiles, activeFile } = get();
-    const newOpen = openFiles.filter((f) => f.path !== filePath);
-    const newActive =
-      activeFile === filePath
-        ? newOpen.length > 0
-          ? newOpen[newOpen.length - 1].path
-          : null
-        : activeFile;
+    void (async () => {
+      const { activeFile } = get();
+      if (activeFile === filePath) {
+        get().flushEditorToStore();
+      }
 
-    set({ openFiles: newOpen, activeFile: newActive });
+      await saveDirtyFile(get, filePath);
+
+      const { openFiles, activeFile: currentActive } = get();
+      const newOpen = openFiles.filter((f) => f.path !== filePath);
+      const newActive =
+        currentActive === filePath
+          ? newOpen.length > 0
+            ? newOpen[newOpen.length - 1].path
+            : null
+          : currentActive;
+
+      set({ openFiles: newOpen, activeFile: newActive });
+    })();
   },
 
   setActiveFile: (filePath) => {
+    const prev = get().activeFile;
+    if (prev && prev !== filePath) {
+      get().flushEditorToStore();
+      void saveDirtyFile(get, prev);
+    }
+
     set({ activeFile: filePath });
     const file = get().openFiles.find((f) => f.path === filePath);
     const displayTitle = file
@@ -97,26 +140,42 @@ export const createEditorSlice: AppSlice<Pick<
     window.merkaba.setTitle(`${displayTitle} — Merkaba`);
   },
 
+  flushEditorToStore: () => {
+    const flushed = readActiveEditorBody();
+    if (!flushed) return;
+
+    const { openFiles, editorMode, activeFile } = get();
+    const file = openFiles.find((f) => f.path === flushed.path);
+    if (!file) return;
+
+    if (editorMode === 'preview' && !file.isDirty) {
+      return;
+    }
+
+    if (flushed.body === file.body) return;
+
+    const nextFiles = patchFileBody(openFiles, flushed.path, flushed.body);
+    set({ openFiles: nextFiles });
+
+    if (flushed.path !== activeFile) return;
+    const updatedFile = nextFiles.find((f) => f.path === flushed.path);
+    if (updatedFile?.meta.noteType === 'text' && updatedFile.meta.title?.trim()) {
+      void window.merkaba.setTitle(`${updatedFile.meta.title} — Merkaba`);
+    }
+  },
+
+  applyFileBody: (filePath, body) => {
+    set({ openFiles: patchFileBody(get().openFiles, filePath, body) });
+  },
+
   updateContent: (body) => {
-    const { activeFile, openFiles } = get();
+    const { activeFile } = get();
     if (!activeFile) return;
-
-    set({
-      openFiles: openFiles.map((f) => {
-        if (f.path !== activeFile) return f;
-
-        if (f.meta.noteType === 'text') {
-          const { body: normalizedBody, title } = applyTitleHeading(body);
-          const meta = title ? { ...f.meta, title } : f.meta;
-          const content = composeNote(ensureNoteMeta(meta), normalizedBody);
-          if (title) window.merkaba.setTitle(`${title} — Merkaba`);
-          return { ...f, body: normalizedBody, content, meta, isDirty: true };
-        }
-
-        const content = composeNote(ensureNoteMeta(f.meta), body);
-        return { ...f, body, content, isDirty: true };
-      }),
-    });
+    get().applyFileBody(activeFile, body);
+    const file = get().openFiles.find((f) => f.path === activeFile);
+    if (file?.meta.noteType === 'text' && file.meta.title?.trim()) {
+      void window.merkaba.setTitle(`${file.meta.title} — Merkaba`);
+    }
   },
 
   updateNoteMeta: (patch) => {
@@ -145,50 +204,86 @@ export const createEditorSlice: AppSlice<Pick<
         }
 
         const content = composeNote(meta, body);
-        return { ...f, meta, body, content, color: meta.color, isDirty: true };
+        return { ...f, meta, body, content, color: meta.color, isDirty: true, saveState: undefined };
       }),
     });
   },
 
-  saveFile: async () => {
-    const { activeFile, openFiles, fileTree } = get();
-    let file = getActiveOpenFile(get().openFiles, get().activeFile);
-    if (!activeFile || !file) return;
+  saveFile: (filePath?: string) => {
+    const pathToSave = filePath ?? get().activeFile;
+    if (!pathToSave) return Promise.resolve();
 
-    let targetPath = activeFile;
-
-    try {
-      if (file.meta.noteType === 'text' && file.meta.title?.trim()) {
-        const existing = collectFilePaths(fileTree);
-        existing.delete(activeFile);
-        const nextPath = resolveNotePathForTitle(file.meta.title, activeFile, existing);
-        if (nextPath) {
-          await window.merkaba.renameFile(activeFile, nextPath);
-          targetPath = nextPath;
-          set({
-            openFiles: openFiles.map((f) =>
-              f.path === activeFile ? { ...f, path: nextPath } : f
-            ),
-            activeFile: nextPath,
-          });
-          file = get().openFiles.find((f) => f.path === nextPath) ?? file;
-        }
+    return enqueueFileSave(pathToSave, async () => {
+      if (!filePath || filePath === get().activeFile) {
+        get().flushEditorToStore();
       }
 
-      const saved = await window.merkaba.writeFile(targetPath, file.content);
-      const { meta, body } = parseNote(saved);
-      set({
-        openFiles: get().openFiles.map((f) =>
-          f.path === targetPath
-            ? { ...f, content: saved, body, meta, color: meta.color, isDirty: false }
-            : f
-        ),
-        statusMessage: 'Сохранено',
-      });
-      void get().refreshFileTree();
-    } catch (err) {
-      set({ statusMessage: `Ошибка сохранения: ${err}` });
-    }
+      let file = get().openFiles.find((f) => f.path === pathToSave);
+      if (!file) return;
+
+      const contentToSave = file.content;
+      let targetPath = pathToSave;
+
+      set({ openFiles: markSaveState(get().openFiles, pathToSave, 'saving') });
+
+      try {
+        await window.merkaba.writeFile(pathToSave, contentToSave);
+
+        if (file.meta.noteType === 'text' && file.meta.title?.trim()) {
+          const existing = collectFilePaths(get().fileTree);
+          existing.delete(pathToSave);
+          const nextPath = resolveNotePathForTitle(file.meta.title, pathToSave, existing);
+          if (nextPath) {
+            await window.merkaba.renameFile(pathToSave, nextPath);
+            targetPath = nextPath;
+            migrateFileSaveQueue(pathToSave, nextPath);
+            set({
+              openFiles: get().openFiles.map((f) =>
+                f.path === pathToSave ? { ...f, path: nextPath, saveState: 'saving' as const } : f
+              ),
+              activeFile: get().activeFile === pathToSave ? nextPath : get().activeFile,
+            });
+            file = get().openFiles.find((f) => f.path === nextPath) ?? file;
+          }
+        }
+
+        const saved = await window.merkaba.writeFile(targetPath, contentToSave);
+        const { meta, body } = parseNote(saved);
+
+        let needsAnotherSave = false;
+        set({
+          openFiles: get().openFiles.map((f) => {
+            if (f.path !== targetPath) return f;
+            if (f.content !== contentToSave) {
+              needsAnotherSave = true;
+              return { ...f, saveState: undefined };
+            }
+            return {
+              ...f,
+              content: saved,
+              body,
+              meta,
+              color: meta.color,
+              isDirty: false,
+              saveState: 'saved' as const,
+            };
+          }),
+          statusMessage: 'Сохранено',
+        });
+
+        void get().enrichFileTree();
+
+        if (needsAnotherSave) {
+          await get().saveFile(targetPath);
+        }
+      } catch (err) {
+        const message = String(err);
+        set({
+          openFiles: markSaveState(get().openFiles, targetPath, 'error'),
+          statusMessage: `Ошибка сохранения: ${message}`,
+        });
+      }
+    });
   },
 
   toggleCheckbox: async (filePath, bodyLine) => {
@@ -216,7 +311,7 @@ export const createEditorSlice: AppSlice<Pick<
       await window.merkaba.writeFile(filePath, content);
       set({
         openFiles: get().openFiles.map((f) =>
-          f.path === filePath ? { ...f, isDirty: false } : f
+          f.path === filePath ? { ...f, isDirty: false, saveState: 'saved' as const } : f
         ),
       });
     } catch (err) {

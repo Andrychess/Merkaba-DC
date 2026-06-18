@@ -96,6 +96,33 @@ export function SettingsDialog() {
               onChange={(theme) => setLocal({ ...local, theme })}
             />
           </div>
+
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={local.showLineNumbers}
+              onChange={(e) => setLocal({ ...local, showLineNumbers: e.target.checked })}
+              className="w-4 h-4 rounded border-merkaba-border bg-merkaba-bg accent-merkaba-accent"
+            />
+            <span className="text-sm text-merkaba-text">Номера и выделение строк</span>
+          </label>
+          <p className="text-[11px] text-merkaba-muted -mt-3 leading-relaxed">
+            В режиме исходника: колонка с номерами и подсветка строки с курсором.
+          </p>
+
+          <label className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={local.showRuledLines}
+              onChange={(e) => setLocal({ ...local, showRuledLines: e.target.checked })}
+              className="w-4 h-4 rounded border-merkaba-border bg-merkaba-bg accent-merkaba-accent"
+            />
+            <span className="text-sm text-merkaba-text">Разлиновка как в блокноте</span>
+          </label>
+          <p className="text-[11px] text-merkaba-muted -mt-3 leading-relaxed">
+            Горизонтальная линия под каждой строкой в тексте, музыке и исходнике. Enter — новая строка, Shift+Enter — пустая строка (текст).
+          </p>
+
           <div className="p-4 rounded-xl bg-merkaba-elevated border border-merkaba-border">
             <div className="flex items-center gap-2 mb-2">
               <IconCloud className="w-4 h-4 text-emerald-400" />

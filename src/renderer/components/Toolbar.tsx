@@ -12,6 +12,12 @@ const groups = [
     { action: 'italic', icon: 'I', title: 'Курсив (Ctrl+I)', before: '*', after: '*', italic: true },
   ],
   [
+    { action: 'alignLeft', icon: '⫷', title: 'По левому краю (режим просмотра)', formatOnly: true },
+    { action: 'alignCenter', icon: '≡', title: 'По центру (режим просмотра)', formatOnly: true },
+    { action: 'alignRight', icon: '⫸', title: 'По правому краю (режим просмотра)', formatOnly: true },
+    { action: 'alignJustify', icon: '▥', title: 'По ширине (режим просмотра)', formatOnly: true },
+  ],
+  [
     { action: 'heading1', icon: 'H1', title: 'Заголовок 1 (Ctrl+Alt+1)', before: '# ', after: '' },
     { action: 'heading2', icon: 'H2', title: 'Заголовок 2 (Ctrl+Alt+2)', before: '## ', after: '' },
     { action: 'heading3', icon: 'H3', title: 'Заголовок 3 (Ctrl+Alt+3)', before: '### ', after: '' },
@@ -29,7 +35,18 @@ const groups = [
 ];
 
 export function Toolbar({ mode, onInsert, onFormat }: ToolbarProps) {
-  const handleClick = (action: string, before: string, after: string) => {
+  const handleClick = (
+    action: string,
+    before: string,
+    after: string,
+    formatOnly?: boolean
+  ) => {
+    if (formatOnly) {
+      if (mode === 'preview' && onFormat) {
+        onFormat(action);
+      }
+      return;
+    }
     if (mode === 'preview' && onFormat) {
       onFormat(action);
       return;
@@ -47,7 +64,14 @@ export function Toolbar({ mode, onInsert, onFormat }: ToolbarProps) {
               key={tool.action}
               type="button"
               onMouseDown={mode === 'preview' ? keepEditorFocus : undefined}
-              onClick={() => handleClick(tool.action, tool.before, tool.after)}
+              onClick={() =>
+                handleClick(
+                  tool.action,
+                  'before' in tool ? tool.before : '',
+                  'after' in tool ? tool.after : '',
+                  'formatOnly' in tool ? tool.formatOnly : false
+                )
+              }
               title={tool.title}
               className={`w-7 h-7 flex items-center justify-center rounded-md text-xs
                          text-merkaba-muted hover:text-merkaba-text hover:bg-merkaba-hover

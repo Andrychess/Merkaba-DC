@@ -114,7 +114,7 @@ export function WelcomeScreen() {
 
       <div className="max-w-md text-center px-8 w-full relative animate-fade-in app-no-drag">
         <div className="mb-10">
-          <div className="w-16 h-16 mx-auto mb-5 flex items-center justify-center shadow-glow">
+          <div className="w-16 h-16 mx-auto mb-5 flex items-center justify-center">
             <LogoIcon className="w-16 h-16" />
           </div>
           <h1 className="text-3xl font-bold text-merkaba-text mb-2 tracking-tight">Merkaba</h1>
